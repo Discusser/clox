@@ -1,3 +1,0 @@
-OP_CONSTANT index (1b)
-OP_CONSTANT_LONG index (4b)
-OP_RETURN (0b)
