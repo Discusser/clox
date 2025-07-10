@@ -2,7 +2,7 @@
 #include "chunk.h"
 #include <stdio.h>
 
-void disassemble_chunk(Chunk *chunk, const char *name) {
+void disassemble_chunk(lox_chunk *chunk, const char *name) {
   printf("== Chunk '%s' ==\n", name);
 
   for (int i = 0; i < chunk->code.size;) {
@@ -10,7 +10,7 @@ void disassemble_chunk(Chunk *chunk, const char *name) {
   }
 }
 
-int disassemble_instruction(Chunk *chunk, int offset) {
+int disassemble_instruction(lox_chunk *chunk, int offset) {
   printf("LINE %-4d ", get_line(chunk, offset) + 1);
   printf("%04d ", offset);
   uint8_t instruction = chunk->code.values[offset];
@@ -37,7 +37,7 @@ int disassemble_instruction(Chunk *chunk, int offset) {
   }
 }
 
-int constant_instruction(const char *name, Chunk *chunk, int offset) {
+int constant_instruction(const char *name, lox_chunk *chunk, int offset) {
   uint8_t constant = chunk->code.values[offset + 1];
   printf("%-16s index %4d value '", name, constant);
   print_value(chunk->constants.values[constant]);
@@ -45,7 +45,7 @@ int constant_instruction(const char *name, Chunk *chunk, int offset) {
   return offset + 2;
 }
 
-int constant_long_instruction(const char *name, Chunk *chunk, int offset) {
+int constant_long_instruction(const char *name, lox_chunk *chunk, int offset) {
   uint16_t constant = *(uint16_t *)&chunk->code.values[offset + 1];
   printf("%-16s index %4d value '", name, constant);
   print_value(chunk->constants.values[constant]);

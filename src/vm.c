@@ -1,26 +1,26 @@
 #include "vm.h"
+#include "compiler.h"
 #include "debug.h"
 #include <stdio.h>
 
-vm virtual_machine;
+lox_vm vm;
 
 void init_vm() {
-  value_array_initialize(&virtual_machine.stack);
+  value_array_initialize(&vm.stack);
   reset_stack();
 }
 
-void free_vm() { value_array_free(&virtual_machine.stack); }
+void free_vm() { value_array_free(&vm.stack); }
 
-void reset_stack() { virtual_machine.stack.size = 0; }
+void reset_stack() { vm.stack.size = 0; }
 
-void push(lox_value value) { value_array_push(&virtual_machine.stack, value); }
+void push(lox_value value) { value_array_push(&vm.stack, value); }
 
-lox_value pop() { return value_array_pop(&virtual_machine.stack); }
+lox_value pop() { return value_array_pop(&vm.stack); }
 
-interpret_result interpret(Chunk *chunk) {
-  virtual_machine.chunk = chunk;
-  virtual_machine.ip = virtual_machine.chunk->code.values;
-  return run();
+interpret_result interpret(const char *source) {
+  compile(source);
+  return INTERPRET_OK;
 }
 
 interpret_result run() {
@@ -34,17 +34,14 @@ interpret_result run() {
   for (;;) {
 #ifdef DEBUG_TRACE_EXECUTION
     printf("%-10s", "STACK");
-    for (lox_value *elem = virtual_machine.stack.values;
-         elem < virtual_machine.stack.values + virtual_machine.stack.size;
-         elem++) {
+    for (lox_value *elem = vm.stack.values;
+         elem < vm.stack.values + vm.stack.size; elem++) {
       printf("[ ");
       print_value(*elem);
       printf(" ]");
     }
     printf("\n");
-    disassemble_instruction(virtual_machine.chunk,
-                            virtual_machine.ip -
-                                virtual_machine.chunk->code.values);
+    disassemble_instruction(vm.chunk, vm.ip - vm.chunk->code.values);
 #endif
 
     uint8_t instruction;
@@ -76,7 +73,7 @@ interpret_result run() {
       BINARY_OP(/);
       break;
     case OP_NEGATE:
-      virtual_machine.stack.values[virtual_machine.stack.size - 1] *= -1;
+      vm.stack.values[vm.stack.size - 1] *= -1;
       break;
     default:
       printf("Unknown instruction %i\n", instruction);
@@ -87,18 +84,16 @@ interpret_result run() {
 #undef BINARY_OP
 }
 
-uint8_t read_byte() { return *virtual_machine.ip++; }
+uint8_t read_byte() { return *vm.ip++; }
 
 uint32_t read_word() {
-  uint32_t ret = *(uint32_t *)virtual_machine.ip;
-  virtual_machine.ip += sizeof(uint32_t);
+  uint32_t ret = *(uint32_t *)vm.ip;
+  vm.ip += sizeof(uint32_t);
   return ret;
 }
 
-lox_value read_constant() {
-  return virtual_machine.chunk->constants.values[read_byte()];
-}
+lox_value read_constant() { return vm.chunk->constants.values[read_byte()]; }
 
 lox_value read_constant_long() {
-  return virtual_machine.chunk->constants.values[read_word()];
+  return vm.chunk->constants.values[read_word()];
 }

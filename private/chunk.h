@@ -41,24 +41,24 @@ typedef struct {
   // `lines[n]` is equal to the number of instructions on the line n+1.
   lox_int_array lines;
   lox_value_array constants;
-} Chunk;
+} lox_chunk;
 
 // Initializes all the fields of a chunk.
-void initialize_chunk(Chunk *chunk);
+void initialize_chunk(lox_chunk *chunk);
 // Frees a chunk from memory.
-void free_chunk(Chunk *chunk);
+void free_chunk(lox_chunk *chunk);
 // Adds a byte at a given line to the chunk. `line` is expected to be greater
 // than `chunk->last_line`, or else errors may occur.
-void write_to_chunk(Chunk *chunk, uint8_t byte, int line);
+void write_to_chunk(lox_chunk *chunk, uint8_t byte, int line);
 // Adds an array of bytes at a given line to the chunk. See also
 // `write_to_chunk`
-void write_array_to_chunk(Chunk *chunk, uint8_t *bytes, int size, int line);
+void write_array_to_chunk(lox_chunk *chunk, uint8_t *bytes, int size, int line);
 // Adds an integer at a given line to the chunk. The integer is converted to a
 // `uint8_t *` and written via `write_array_to_chunk`
-void write_word_to_chunk(Chunk *chunk, uint32_t word, int line);
+void write_word_to_chunk(lox_chunk *chunk, uint32_t word, int line);
 // Adds a constant to the chunk. The constant's index is returned, which
 // corresponds to its index in `chunk->constants`
-int add_constant(Chunk *chunk, lox_value value);
+int add_constant(lox_chunk *chunk, lox_value value);
 
 // Returns the line number of an instruction at the given offset.
-int get_line(Chunk *chunk, int instruction_offset);
+int get_line(lox_chunk *chunk, int instruction_offset);
