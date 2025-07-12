@@ -11,8 +11,25 @@ typedef enum {
   // Loads a constant onto the stack. Allows up to 2^32-1 different constants.
   // Parameters: index (4 bytes)
   OP_CONSTANT_LONG,
-  // Negates the value at the top of the stack. Parameters: none
+  // Pushes the literal 'nil' onto the stack. Parameters: none
+  OP_NIL,
+  // Pushes the literal 'true' onto the stack. Parameters: none
+  OP_TRUE,
+  // Pushes the literal 'false' onto the stack. Parameters: none
+  OP_FALSE,
+  // Compares the two values at the top of the stack. Parameters: none
+  OP_EQ,
+  OP_NEQ,
+  OP_GREATER,
+  OP_GREATEREQ,
+  OP_LESS,
+  OP_LESSEQ,
+  // Negates the number at the top of the stack. Parameters: none
   OP_NEGATE,
+  // Negates the value at the top of the stack. Parameters: none
+  OP_NOT,
+  // Binary operators that act on the two variables on top of the stack.
+  // Parameters: none
   OP_ADD,
   OP_SUBTRACT,
   OP_MULTIPLY,
@@ -60,5 +77,5 @@ void write_word_to_chunk(lox_chunk *chunk, uint32_t word, int line);
 // corresponds to its index in `chunk->constants`
 int add_constant(lox_chunk *chunk, lox_value value);
 
-// Returns the line number of an instruction at the given offset.
+// Returns the 0-indexed line number of an instruction at the given offset.
 int get_line(lox_chunk *chunk, int instruction_offset);
