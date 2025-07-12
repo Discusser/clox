@@ -8,6 +8,25 @@ typedef struct {
   int line;
 } lox_scanner;
 
+static lox_token consume_string();
+static lox_token consume_number();
+static lox_token consume_identifier();
+
+static lox_token_type identifier_type();
+static lox_token_type check_keyword(int start, int length, const char *rest,
+                                    lox_token_type type);
+
+static bool is_at_end();
+static bool is_identifier_char(char c);
+
+static char consume();
+static char consume_expect(lox_token_type type, const char *message);
+static void consume_extra();
+static bool match(char c);
+
+static char peek();
+static char peek_next();
+
 lox_scanner scanner;
 
 void init_scanner(const char *source) {
@@ -188,6 +207,8 @@ lox_token_type check_keyword(int start, int length, const char *rest,
 bool is_at_end() { return peek() == '\0'; }
 
 char consume() { return *scanner.current++; }
+
+char consume_expect(lox_token_type type, const char *message) {}
 
 void consume_extra() {
   for (;;) {

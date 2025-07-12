@@ -1,5 +1,7 @@
 #pragma once
 
+#ifndef NDEBUG
+
 #include "chunk.h"
 
 // Disassembles a chunk. This prints every instruction in the chunk to standard
@@ -12,3 +14,5 @@ int disassemble_instruction(lox_chunk *chunk, int offset);
 int constant_instruction(const char *name, lox_chunk *chunk, int offset);
 int constant_long_instruction(const char *name, lox_chunk *chunk, int offset);
 int simple_instruction(const char *name, int offset);
+
+#endif

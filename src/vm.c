@@ -1,4 +1,5 @@
 #include "vm.h"
+#include "chunk.h"
 #include "compiler.h"
 #include "debug.h"
 #include <stdio.h>
@@ -19,16 +20,28 @@ void push(lox_value value) { value_array_push(&vm.stack, value); }
 lox_value pop() { return value_array_pop(&vm.stack); }
 
 interpret_result interpret(const char *source) {
-  compile(source);
-  return INTERPRET_OK;
+  lox_chunk chunk;
+  initialize_chunk(&chunk);
+
+  if (!compile(source, &chunk)) {
+    free_chunk(&chunk);
+    return INTERPRET_COMPILE_ERROR;
+  }
+
+  vm.chunk = &chunk;
+  vm.ip = vm.chunk->code.values;
+
+  interpret_result result = run();
+  free_chunk(&chunk);
+
+  return result;
 }
 
 interpret_result run() {
 #define BINARY_OP(op)                                                          \
   do {                                                                         \
     double rhs = pop();                                                        \
-    double lhs = pop();                                                        \
-    push(lhs op rhs);                                                          \
+    vm.stack.values[vm.stack.size - 1] op## = rhs;                             \
   } while (0)
 
   for (;;) {
