@@ -8,6 +8,7 @@ typedef struct {
   lox_chunk *chunk;
   uint8_t *ip;
   lox_value_array stack;
+  lox_object *objects;
 } lox_vm;
 
 typedef enum {
@@ -18,11 +19,13 @@ typedef enum {
 
 void init_vm();
 void free_vm();
+void free_objects();
 
 void runtime_error(const char *format, ...);
 void reset_stack();
 void push(lox_value value);
 lox_value pop();
+lox_value *peek(int n);
 
 bool is_falsey(lox_value value);
 bool values_equal(lox_value lhs, lox_value rhs);

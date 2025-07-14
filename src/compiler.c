@@ -1,10 +1,12 @@
 #include "compiler.h"
 #include "chunk.h"
 #include "debug.h"
+#include "object.h"
 #include "scanner.h"
 #include "value.h"
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 typedef enum {
   PREC_NONE,
@@ -58,6 +60,7 @@ static void grouping();
 static void unary();
 static void binary();
 static void literal();
+static void string();
 
 lox_parser parser;
 lox_chunk *compiling_chunk;
@@ -82,7 +85,7 @@ lox_parse_rule rules[] = {
     [TOKEN_LESS] = {NULL, binary, PREC_EQUALITY},
     [TOKEN_LESS_EQUAL] = {NULL, binary, PREC_EQUALITY},
     [TOKEN_IDENTIFIER] = {NULL, NULL, PREC_NONE},
-    [TOKEN_STRING] = {NULL, NULL, PREC_NONE},
+    [TOKEN_STRING] = {string, NULL, PREC_NONE},
     [TOKEN_NUMBER] = {number, NULL, PREC_NONE},
     [TOKEN_AND] = {NULL, NULL, PREC_NONE},
     [TOKEN_CLASS] = {NULL, NULL, PREC_NONE},
@@ -225,7 +228,7 @@ static void parse_precedence(lox_precedence precedence) {
 static void expression() { parse_precedence(PREC_ASSIGNMENT); }
 
 static void number() {
-  lox_value value = number_value(strtod(parser.previous.start, NULL));
+  lox_value value = lox_value_from_number(strtod(parser.previous.start, NULL));
   emit_constant(value);
 }
 
@@ -242,7 +245,6 @@ static void unary() {
   switch (operator_type) {
   case TOKEN_MINUS:
     emit_byte(OP_NEGATE);
-    break;
   case TOKEN_BANG:
     emit_byte(OP_NOT);
     break;
@@ -306,4 +308,10 @@ static void literal() {
   default:
     return;
   }
+}
+
+static void string() {
+  lox_object_string *str = lox_object_string_new_consume(
+      (char *)(parser.previous.start + 1), parser.previous.length - 2, true);
+  emit_constant(lox_value_from_object((lox_object *)str));
 }
