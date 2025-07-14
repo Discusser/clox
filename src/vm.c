@@ -10,20 +10,36 @@
 #include <stdlib.h>
 #include <string.h>
 
+static void free_objects();
+
+static void runtime_error(const char *format, ...);
+static void reset_stack();
+static void push(lox_value value);
+static lox_value pop();
+static lox_value *peek(int n);
+
+static uint8_t read_byte();
+static uint32_t read_word();
+static lox_value read_constant();
+static lox_value read_constant_long();
+
 lox_vm vm;
 
 void init_vm() {
   value_array_initialize(&vm.stack);
+  value_array_grow_to(&vm.stack, LOX_STACK_INITIAL_SIZE, 0);
+  lox_hash_table_init(&vm.strings);
   vm.objects = NULL;
   reset_stack();
 }
 
 void free_vm() {
   value_array_free(&vm.stack);
+  lox_hash_table_free(&vm.strings);
   free_objects();
 }
 
-void free_objects() {
+static void free_objects() {
   lox_object *curr = vm.objects;
   while (curr->next != NULL) {
     lox_object *tmp = curr->next;
@@ -32,7 +48,7 @@ void free_objects() {
   }
 }
 
-void runtime_error(const char *format, ...) {
+static void runtime_error(const char *format, ...) {
   va_list args;
   va_start(args, format);
   vfprintf(stderr, format, args);
@@ -40,25 +56,27 @@ void runtime_error(const char *format, ...) {
   fputc('\n', stderr);
 
   size_t instruction = vm.ip - vm.chunk->code.values - 1;
-  int line = get_line(vm.chunk, instruction) + 1;
+  int line = lox_chunk_get_offset_line(vm.chunk, instruction) + 1;
   fprintf(stderr, "[line %d] in script\n", line);
   reset_stack();
 }
 
-void reset_stack() { vm.stack.size = 0; }
+static void reset_stack() { vm.stack.size = 0; }
 
-void push(lox_value value) { value_array_push(&vm.stack, value); }
+static void push(lox_value value) { value_array_push(&vm.stack, value); }
 
-lox_value pop() { return value_array_pop(&vm.stack); }
+static lox_value pop() { return value_array_pop(&vm.stack); }
 
-lox_value *peek(int n) { return &vm.stack.values[vm.stack.size - 1 - n]; }
+static lox_value *peek(int n) {
+  return &vm.stack.values[vm.stack.size - 1 - n];
+}
 
-bool is_falsey(lox_value value) {
+bool lox_is_falsey(lox_value value) {
   return value.type == VAL_NIL ||
          (value.type == VAL_BOOL && value.as.boolean == false);
 }
 
-bool values_equal(lox_value lhs, lox_value rhs) {
+bool lox_values_equal(lox_value lhs, lox_value rhs) {
   if (lhs.type != rhs.type)
     return false;
   switch (lhs.type) {
@@ -69,16 +87,7 @@ bool values_equal(lox_value lhs, lox_value rhs) {
   case VAL_NUMBER:
     return lhs.as.number == rhs.as.number;
   case VAL_OBJECT: {
-    if (lox_value_is_string(lhs) && lox_value_is_string(rhs)) {
-      lox_object_string *left_str = (lox_object_string *)lhs.as.object;
-      lox_object_string *right_str = (lox_object_string *)rhs.as.object;
-      return left_str == right_str ||
-             (left_str->length == right_str->length &&
-              strncmp(left_str->chars, right_str->chars, left_str->length) ==
-                  0);
-    } else {
-      return lhs.as.object == rhs.as.object;
-    }
+    return lhs.as.object == rhs.as.object;
   }
   default:
     return false;
@@ -87,10 +96,10 @@ bool values_equal(lox_value lhs, lox_value rhs) {
 
 interpret_result interpret(const char *source) {
   lox_chunk chunk;
-  initialize_chunk(&chunk);
+  lox_chunk_initialize(&chunk);
 
-  if (!compile(source, &chunk)) {
-    free_chunk(&chunk);
+  if (!lox_compiler_compile(source, &chunk)) {
+    lox_chunk_free(&chunk);
     return INTERPRET_COMPILE_ERROR;
   }
 
@@ -98,7 +107,7 @@ interpret_result interpret(const char *source) {
   vm.ip = vm.chunk->code.values;
 
   interpret_result result = run();
-  free_chunk(&chunk);
+  lox_chunk_free(&chunk);
 
   return result;
 }
@@ -122,17 +131,17 @@ interpret_result run() {
     for (lox_value *elem = vm.stack.values;
          elem < vm.stack.values + vm.stack.size; elem++) {
       printf("[ ");
-      print_value(*elem);
+      lox_print_value(*elem);
       printf(" ]");
     }
     printf("\n");
-    disassemble_instruction(vm.chunk, vm.ip - vm.chunk->code.values);
+    lox_disassemble_instruction(vm.chunk, vm.ip - vm.chunk->code.values);
 #endif
 
     uint8_t instruction;
     switch (instruction = read_byte()) {
     case OP_RETURN:
-      print_value(pop());
+      lox_print_value(pop());
       printf("\n");
       return INTERPRET_OK;
     case OP_CONSTANT: {
@@ -157,13 +166,13 @@ interpret_result run() {
     case OP_EQ: {
       lox_value rhs = pop();
       lox_value lhs = pop();
-      push(lox_value_from_bool(values_equal(rhs, lhs)));
+      push(lox_value_from_bool(lox_values_equal(rhs, lhs)));
       break;
     }
     case OP_NEQ: {
       lox_value rhs = pop();
       lox_value lhs = pop();
-      push(lox_value_from_bool(!values_equal(rhs, lhs)));
+      push(lox_value_from_bool(!lox_values_equal(rhs, lhs)));
       break;
     }
     case OP_GREATER:
@@ -190,7 +199,7 @@ interpret_result run() {
     }
     case OP_NOT: {
       lox_value value = pop();
-      bool f = is_falsey(value);
+      bool f = lox_is_falsey(value);
       push(lox_value_from_bool(f));
       break;
     }
@@ -235,16 +244,18 @@ interpret_result run() {
 #undef BINARY_OP
 }
 
-uint8_t read_byte() { return *vm.ip++; }
+static uint8_t read_byte() { return *vm.ip++; }
 
-uint32_t read_word() {
+static uint32_t read_word() {
   uint32_t ret = *(uint32_t *)vm.ip;
   vm.ip += sizeof(uint32_t);
   return ret;
 }
 
-lox_value read_constant() { return vm.chunk->constants.values[read_byte()]; }
+static lox_value read_constant() {
+  return vm.chunk->constants.values[read_byte()];
+}
 
-lox_value read_constant_long() {
+static lox_value read_constant_long() {
   return vm.chunk->constants.values[read_word()];
 }

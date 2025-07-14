@@ -107,7 +107,7 @@ lox_parse_rule rules[] = {
     [TOKEN_EOF] = {NULL, NULL, PREC_NONE},
 };
 
-bool compile(const char *source, lox_chunk *chunk) {
+bool lox_compiler_compile(const char *source, lox_chunk *chunk) {
   init_scanner(source);
   compiling_chunk = chunk;
 
@@ -166,7 +166,7 @@ static void error_at_current(const char *message) {
 static lox_chunk *current_chunk() { return compiling_chunk; }
 
 static void emit_byte(uint8_t byte) {
-  write_to_chunk(current_chunk(), byte, parser.previous.line);
+  lox_chunk_write(current_chunk(), byte, parser.previous.line);
 }
 
 static void emit_bytes2(uint8_t byte1, uint8_t byte2) {
@@ -183,7 +183,7 @@ static void emit_word(int word) {
 }
 
 static int emit_constant(lox_value value) {
-  int constant = add_constant(current_chunk(), value);
+  int constant = lox_chunk_add_constant(current_chunk(), value);
   if (constant <= UINT8_MAX) {
     emit_bytes2(OP_CONSTANT, constant);
   } else {
@@ -199,7 +199,7 @@ static void end_compiler() {
   emit_return();
 #ifdef DEBUG_PRINT_CODE
   if (!parser.had_error) {
-    disassemble_chunk(current_chunk(), "code");
+    lox_disassemble_chunk(current_chunk(), "code");
   }
 #endif
 }

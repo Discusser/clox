@@ -17,12 +17,29 @@ typedef enum {
   OP_TRUE,
   // Pushes the literal 'false' onto the stack. Parameters: none
   OP_FALSE,
-  // Compares the two values at the top of the stack. Parameters: none
+  // Checks if the two values on top of the stack are equal. Pops the operands
+  // and pushes true or false according to the result. Parameters: none
   OP_EQ,
+  // Checks if the two values on top of the stack are not equal. Pops the
+  // operands
+  // and pushes true or false according to the result. Parameters: none
   OP_NEQ,
+  // Checks if the 2nd element of the stack is greater than the 1st element (the
+  // top). Pops the operands and pushes true or false according to the result.
+  // Parameters: none
   OP_GREATER,
+  // Checks if the 2nd element of the stack is greater than or equal to the 1st
+  // element (the
+  // top). Pops the operands and pushes true or false according to the result.
+  // Parameters: none
   OP_GREATEREQ,
+  // Checks if the 2nd element of the stack is less than the 1st element (the
+  // top). Pops the operands and pushes true or false according to the result.
+  // Parameters: none
   OP_LESS,
+  // Checks if the 2nd element of the stack is less than or equal to the 1st
+  // element (the top). Pops the operands and pushes true or false according to
+  // the result. Parameters: none
   OP_LESSEQ,
   // Negates the number at the top of the stack. Parameters: none
   OP_NEGATE,
@@ -61,21 +78,22 @@ typedef struct {
 } lox_chunk;
 
 // Initializes all the fields of a chunk.
-void initialize_chunk(lox_chunk *chunk);
+void lox_chunk_initialize(lox_chunk *chunk);
 // Frees a chunk from memory.
-void free_chunk(lox_chunk *chunk);
+void lox_chunk_free(lox_chunk *chunk);
 // Adds a byte at a given line to the chunk. `line` is expected to be greater
 // than `chunk->last_line`, or else errors may occur.
-void write_to_chunk(lox_chunk *chunk, uint8_t byte, int line);
+void lox_chunk_write(lox_chunk *chunk, uint8_t byte, int line);
 // Adds an array of bytes at a given line to the chunk. See also
 // `write_to_chunk`
-void write_array_to_chunk(lox_chunk *chunk, uint8_t *bytes, int size, int line);
+void lox_chunk_write_array(lox_chunk *chunk, uint8_t *bytes, int size,
+                           int line);
 // Adds an integer at a given line to the chunk. The integer is converted to a
 // `uint8_t *` and written via `write_array_to_chunk`
-void write_word_to_chunk(lox_chunk *chunk, uint32_t word, int line);
+void lox_chunk_write_word(lox_chunk *chunk, uint32_t word, int line);
 // Adds a constant to the chunk. The constant's index is returned, which
 // corresponds to its index in `chunk->constants`
-int add_constant(lox_chunk *chunk, lox_value value);
+int lox_chunk_add_constant(lox_chunk *chunk, lox_value value);
 
 // Returns the 0-indexed line number of an instruction at the given offset.
-int get_line(lox_chunk *chunk, int instruction_offset);
+int lox_chunk_get_offset_line(lox_chunk *chunk, int instruction_offset);

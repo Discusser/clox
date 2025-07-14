@@ -2,26 +2,26 @@
 #include "memory.h"
 #include <string.h>
 
-void initialize_chunk(lox_chunk *chunk) {
+void lox_chunk_initialize(lox_chunk *chunk) {
   chunk->last_line = -1;
   byte_array_initialize(&chunk->code);
   int_array_initialize(&chunk->lines);
   value_array_initialize(&chunk->constants);
 }
 
-void free_chunk(lox_chunk *chunk) {
+void lox_chunk_free(lox_chunk *chunk) {
   byte_array_free(&chunk->code);
   int_array_free(&chunk->lines);
   value_array_free(&chunk->constants);
-  initialize_chunk(chunk);
+  lox_chunk_initialize(chunk);
 }
 
-void write_to_chunk(lox_chunk *chunk, uint8_t byte, int line) {
-  write_array_to_chunk(chunk, &byte, 1, line);
+void lox_chunk_write(lox_chunk *chunk, uint8_t byte, int line) {
+  lox_chunk_write_array(chunk, &byte, 1, line);
 }
 
-void write_array_to_chunk(lox_chunk *chunk, uint8_t *bytes, int size,
-                          int line) {
+void lox_chunk_write_array(lox_chunk *chunk, uint8_t *bytes, int size,
+                           int line) {
   for (int i = 0; i < size; i++) {
     byte_array_push(&chunk->code, bytes[i]);
   }
@@ -47,16 +47,16 @@ void write_array_to_chunk(lox_chunk *chunk, uint8_t *bytes, int size,
   chunk->last_line = line;
 }
 
-void write_word_to_chunk(lox_chunk *chunk, uint32_t word, int line) {
-  write_array_to_chunk(chunk, (uint8_t *)&word, 4, line);
+void lox_chunk_write_word(lox_chunk *chunk, uint32_t word, int line) {
+  lox_chunk_write_array(chunk, (uint8_t *)&word, 4, line);
 }
 
-int add_constant(lox_chunk *chunk, lox_value value) {
+int lox_chunk_add_constant(lox_chunk *chunk, lox_value value) {
   value_array_push(&chunk->constants, value);
   return chunk->constants.size - 1;
 }
 
-int get_line(lox_chunk *chunk, int instruction_offset) {
+int lox_chunk_get_offset_line(lox_chunk *chunk, int instruction_offset) {
   if (instruction_offset < 0)
     return -1;
 

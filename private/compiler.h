@@ -2,4 +2,5 @@
 
 #include "chunk.h"
 
-bool compile(const char *source, lox_chunk *chunk);
+// Compiles code from a string, and writes the bytecode to chunk.
+bool lox_compiler_compile(const char *source, lox_chunk *chunk);
