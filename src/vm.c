@@ -5,6 +5,7 @@
 #include "chunk.h"
 #include "compiler.h"
 #include "debug.h"
+#include <assert.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -29,6 +30,11 @@ void init_vm() {
   value_array_initialize(&vm.stack);
   value_array_grow_to(&vm.stack, LOX_STACK_INITIAL_SIZE, 0);
   lox_hash_table_init(&vm.strings);
+  lox_hash_table_init(&vm.global_indices);
+  value_array_initialize(&vm.globals);
+#ifndef NDEBUG
+  lox_hash_table_init(&vm.global_names);
+#endif
   vm.objects = NULL;
   reset_stack();
 }
@@ -36,6 +42,11 @@ void init_vm() {
 void free_vm() {
   value_array_free(&vm.stack);
   lox_hash_table_free(&vm.strings);
+  lox_hash_table_free(&vm.global_indices);
+  value_array_free(&vm.globals);
+#ifndef NDEBUG
+  lox_hash_table_free(&vm.global_names);
+#endif
   free_objects();
 }
 
@@ -124,6 +135,17 @@ interpret_result run() {
       return INTERPRET_RUNTIME_ERROR;                                          \
     }                                                                          \
   } while (false)
+  // #define CONST_OP(name, const_name, code)                                       \
+//   case name: {                                                                 \
+//     lox_value const_name = read_byte();                                    \
+//     code;                                                                      \
+//     break;                                                                     \
+//   }                                                                            \
+//   case name##_LONG: {                                                          \
+//     lox_value const_name = read_word();                               \
+//     code;                                                                      \
+//     break;                                                                     \
+//   }
 
   for (;;) {
 #ifdef DEBUG_TRACE_EXECUTION
@@ -141,19 +163,7 @@ interpret_result run() {
     uint8_t instruction;
     switch (instruction = read_byte()) {
     case OP_RETURN:
-      lox_print_value(pop());
-      printf("\n");
       return INTERPRET_OK;
-    case OP_CONSTANT: {
-      lox_value constant = read_constant();
-      push(constant);
-      break;
-    }
-    case OP_CONSTANT_LONG: {
-      lox_value constant = read_constant_long();
-      push(constant);
-      break;
-    }
     case OP_NIL:
       push(lox_value_from_nil());
       break;
@@ -235,6 +245,86 @@ interpret_result run() {
     case OP_DIVIDE:
       BINARY_OP(lox_value_from_number, /);
       break;
+    case OP_PRINT:
+      lox_print_value(pop());
+      printf("\n");
+      break;
+    case OP_POP:
+      pop();
+      break;
+    case OP_CONSTANT: {
+      push(read_constant());
+      break;
+    }
+    case OP_CONSTANT_LONG: {
+      push(read_constant_long());
+      break;
+    }
+    case OP_GET_GLOBAL_LONG:
+    case OP_GET_GLOBAL: {
+      int index = instruction == OP_GET_GLOBAL ? read_byte() : read_word();
+      assert(index < vm.globals.size);
+
+      lox_value value = vm.globals.values[index];
+      if (value.type == VAL_EMPTY) {
+        runtime_error("Undefined variable.");
+        return INTERPRET_RUNTIME_ERROR;
+      }
+
+      push(value);
+      break;
+    }
+    case OP_DEFINE_GLOBAL_LONG:
+    case OP_DEFINE_GLOBAL: {
+      vm.globals
+          .values[instruction == OP_DEFINE_GLOBAL ? read_byte() : read_word()] =
+          pop();
+      break;
+    }
+    case OP_SET_GLOBAL_LONG:
+    case OP_SET_GLOBAL: {
+      int index = instruction == OP_SET_GLOBAL ? read_byte() : read_word();
+      assert(index < vm.globals.size);
+
+      lox_value value = vm.globals.values[index];
+      if (value.type == VAL_EMPTY) {
+        runtime_error("Undefined variable.");
+        return INTERPRET_RUNTIME_ERROR;
+      }
+
+      vm.globals.values[index] = pop();
+      break;
+    }
+      // CONST_OP(OP_DEFINE_GLOBAL, name, {
+      //   value_array_push(&vm.globals, name);
+      //   lox_hash_table_put(&vm.global_indices, name,
+      //                      lox_value_from_number(vm.global_indices.count -
+      //                      1));
+      //   pop();
+      // });
+      // CONST_OP(OP_GET_GLOBAL, name, {
+      //   lox_value value;
+      //   if (!lox_hash_table_get(&vm.globals, name, &value)) {
+      //     if (lox_value_is_string(value)) {
+      //       lox_object_string *str = ((lox_object_string *)name.as.object);
+      //       runtime_error("Undefined variable '%.*s'.", str->length,
+      //                     str->chars);
+      //     } else {
+      //       runtime_error(
+      //           "Variable name is not a string. This should be impossible.");
+      //     }
+      //   }
+      //   push(value);
+      // });
+      // CONST_OP(OP_SET_GLOBAL, name, {
+      //   lox_value value = pop();
+      //   if (lox_hash_table_put(&vm.globals, name, value)) {
+      //     lox_hash_table_remove(&vm.globals, name);
+      //     lox_object_string *str = ((lox_object_string *)name.as.object);
+      //     runtime_error("Undefined variable '%.*s'.", str->length,
+      //     str->chars); return INTERPRET_RUNTIME_ERROR;
+      //   }
+      // });
     default:
       printf("Unknown instruction %i\n", instruction);
       return INTERPRET_RUNTIME_ERROR;
@@ -242,6 +332,7 @@ interpret_result run() {
   }
 
 #undef BINARY_OP
+#undef CONST_OP
 }
 
 static uint8_t read_byte() { return *vm.ip++; }

@@ -5,6 +5,8 @@
 
 // This enum contains all the opcodes for our virtual machine.
 typedef enum {
+  // Dummy opcode for invalid instructions.
+  OP_INVALID,
   // Loads a constant onto the stack. Allows up to 2^8-1 different constants.
   // Parameters: index (1 byte)
   OP_CONSTANT,
@@ -51,9 +53,32 @@ typedef enum {
   OP_SUBTRACT,
   OP_MULTIPLY,
   OP_DIVIDE,
+  // Prints the value at the top of the stack. Parameters: none
+  OP_PRINT,
+  // Pops the value off the top of the stack. This is mainly used by expression
+  // statements, since their result is discarded. Parameters: none
+  OP_POP,
+  // Defines a new global variable with the value on the top of the stack,
+  // allowing up to 2^8-1 globals. Parameters: index (1 byte)
+  OP_DEFINE_GLOBAL,
+  // Defines a new global variable with the value on the top of the stack,
+  // allowing up to 2^32-1 globals. Parameters: index (4 bytes)
+  OP_DEFINE_GLOBAL_LONG,
+  // Pushes the value of the global with the given index onto the stack,
+  // allowing up to 2^8-1 globals. Parameters: index (1 byte)
+  OP_GET_GLOBAL,
+  // Pushes the value of the global with the given index onto the stack,
+  // allowing up to 2^32-1 globals. Parameters: index (4 bytes)
+  OP_GET_GLOBAL_LONG,
+  // Sets the value of the global with the given index to the value on top of
+  // the stack, allowing up to 2^8-1 globals. Parameters: index (1 byte)
+  OP_SET_GLOBAL,
+  // Sets the value of the global with the given index to the value on top of
+  // the stack, allowing up to 2^32-1 globals. Parameters: index (4 bytes)
+  OP_SET_GLOBAL_LONG,
   // Returns. Parameters: none
   OP_RETURN,
-} op_code;
+} lox_op_code;
 
 typedef struct {
   // The line number of the previous byte that was written to the chunk. This is

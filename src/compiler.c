@@ -3,7 +3,10 @@
 #include "debug.h"
 #include "object.h"
 #include "scanner.h"
+#include "table.h"
 #include "value.h"
+#include "vm.h"
+#include <assert.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -22,7 +25,7 @@ typedef enum {
   PREC_PRIMARY
 } lox_precedence;
 
-typedef void (*lox_parse_function)();
+typedef void (*lox_parse_function)(bool can_assign);
 
 typedef struct {
   lox_parse_function prefix;
@@ -39,7 +42,10 @@ typedef struct {
 
 static void consume();
 static void consume_expected(lox_token_type type, const char *message);
+static bool match(lox_token_type type);
+static bool check(lox_token_type type);
 
+static void synchronize();
 static void error(const char *message);
 static void error_at(lox_token *token, const char *message);
 static void error_at_current(const char *message);
@@ -47,21 +53,33 @@ static void error_at_current(const char *message);
 static lox_chunk *current_chunk();
 static void emit_byte(uint8_t byte);
 static void emit_bytes2(uint8_t byte1, uint8_t byte2);
-static void emit_word(int word);
-static int emit_constant(lox_value value);
+static void emit_word(uint32_t word);
+static uint32_t emit_constant(lox_value value);
 static void emit_return();
 static void end_compiler();
 
+static uint32_t parse_variable(const char *error_message);
+static uint32_t identifier_constant(lox_token *name);
+static void define_global(uint32_t global);
+
 static lox_parse_rule *get_parse_rule(lox_token_type type);
 static void parse_precedence(lox_precedence precedence);
+static void declaration();
+static void variable_declaration();
+static void statement();
+static void expression_statement();
+static void print_statement();
+static void variable(bool can_assign);
+static void named_variable(lox_token name, bool can_assign);
 static void expression();
-static void number();
-static void grouping();
-static void unary();
-static void binary();
-static void literal();
-static void string();
+static void number(bool can_assign);
+static void grouping(bool can_assign);
+static void unary(bool can_assign);
+static void binary(bool can_assign);
+static void literal(bool can_assign);
+static void string(bool can_assign);
 
+extern lox_vm vm;
 lox_parser parser;
 lox_chunk *compiling_chunk;
 lox_parse_rule rules[] = {
@@ -84,7 +102,7 @@ lox_parse_rule rules[] = {
     [TOKEN_GREATER_EQUAL] = {NULL, binary, PREC_EQUALITY},
     [TOKEN_LESS] = {NULL, binary, PREC_EQUALITY},
     [TOKEN_LESS_EQUAL] = {NULL, binary, PREC_EQUALITY},
-    [TOKEN_IDENTIFIER] = {NULL, NULL, PREC_NONE},
+    [TOKEN_IDENTIFIER] = {variable, NULL, PREC_NONE},
     [TOKEN_STRING] = {string, NULL, PREC_NONE},
     [TOKEN_NUMBER] = {number, NULL, PREC_NONE},
     [TOKEN_AND] = {NULL, NULL, PREC_NONE},
@@ -115,7 +133,9 @@ bool lox_compiler_compile(const char *source, lox_chunk *chunk) {
   parser.panic_mode = false;
 
   consume();
-  expression();
+  while (!match(TOKEN_EOF)) {
+    declaration();
+  }
   consume_expected(TOKEN_EOF, "Expected end of expression.");
 
   end_compiler();
@@ -136,10 +156,42 @@ static void consume() {
 }
 
 static void consume_expected(lox_token_type type, const char *message) {
-  if (parser.current.type == type) {
+  if (check(type)) {
     consume();
   } else {
     error_at_current(message);
+  }
+}
+
+static bool match(lox_token_type type) {
+  if (!check(type))
+    return false;
+  consume();
+  return true;
+}
+
+static bool check(lox_token_type type) { return parser.current.type == type; }
+
+static void synchronize() {
+  parser.panic_mode = false;
+
+  while (parser.current.type != TOKEN_EOF) {
+    if (parser.previous.type == TOKEN_SEMICOLON)
+      return;
+    switch (parser.current.type) {
+    case TOKEN_CLASS:
+    case TOKEN_FUN:
+    case TOKEN_VAR:
+    case TOKEN_FOR:
+    case TOKEN_IF:
+    case TOKEN_WHILE:
+    case TOKEN_PRINT:
+    case TOKEN_RETURN:
+      return;
+    default:;
+    }
+
+    consume();
   }
 }
 
@@ -174,7 +226,7 @@ static void emit_bytes2(uint8_t byte1, uint8_t byte2) {
   emit_byte(byte2);
 }
 
-static void emit_word(int word) {
+static void emit_word(uint32_t word) {
   uint8_t *ptr = (uint8_t *)&word;
   emit_byte(ptr[0]);
   emit_byte(ptr[1]);
@@ -182,12 +234,12 @@ static void emit_word(int word) {
   emit_byte(ptr[3]);
 }
 
-static int emit_constant(lox_value value) {
+static uint32_t emit_constant(lox_value value) {
   int constant = lox_chunk_add_constant(current_chunk(), value);
   if (constant <= UINT8_MAX) {
     emit_bytes2(OP_CONSTANT, constant);
   } else {
-    emit_byte(OP_CONSTANT);
+    emit_byte(OP_CONSTANT_LONG);
     emit_word(constant);
   }
   return constant;
@@ -204,6 +256,43 @@ static void end_compiler() {
 #endif
 }
 
+static uint32_t parse_variable(const char *error_message) {
+  consume_expected(TOKEN_IDENTIFIER, error_message);
+  return identifier_constant(&parser.previous);
+}
+
+static uint32_t identifier_constant(lox_token *name) {
+  lox_value key = lox_value_from_object(
+      (lox_object *)lox_object_string_new_copy(name->start, name->length));
+  lox_value global;
+  if (lox_hash_table_get(&vm.global_indices, key, &global)) {
+    // NOTE: We probably have to free key here since the entry already exists,
+    // unless the GC should take care of it
+    assert(global.type == VAL_NUMBER);
+    return global.as.number;
+  }
+
+  uint32_t index = vm.globals.size;
+  value_array_push(&vm.globals, lox_value_from_empty());
+
+  lox_value num = lox_value_from_number(index);
+  lox_hash_table_put(&vm.global_indices, key, num);
+#ifndef NDEBUG
+  lox_hash_table_put(&vm.global_names, num, key);
+#endif
+  return index;
+}
+
+static void define_global(uint32_t global) {
+  if (global <= UINT8_MAX) {
+    emit_bytes2(OP_DEFINE_GLOBAL, (uint8_t)global);
+    printf("Emitted DEFINE_GLOBAL_LONG %i\n", global);
+  } else {
+    emit_byte(OP_DEFINE_GLOBAL_LONG);
+    emit_word(global);
+  }
+}
+
 static lox_parse_rule *get_parse_rule(lox_token_type type) {
   return &rules[type];
 }
@@ -216,28 +305,104 @@ static void parse_precedence(lox_precedence precedence) {
     return;
   }
 
-  prefix_rule();
+  bool can_assign = precedence <= PREC_ASSIGNMENT;
+  prefix_rule(can_assign);
 
   while (precedence <= get_parse_rule(parser.current.type)->precedence) {
     consume();
     lox_parse_function infix_rule = get_parse_rule(parser.previous.type)->infix;
-    infix_rule();
+    infix_rule(can_assign);
+  }
+
+  if (can_assign && match(TOKEN_EQUAL)) {
+    error("Invalid assignment target.");
+  }
+}
+
+static void declaration() {
+  if (match(TOKEN_VAR)) {
+    variable_declaration();
+  } else {
+    statement();
+  }
+
+  if (parser.panic_mode) {
+    synchronize();
+  }
+}
+
+static void variable_declaration() {
+  uint32_t global = parse_variable("Expected variable name.");
+
+  if (match(TOKEN_EQUAL)) {
+    expression();
+  } else {
+    emit_byte(OP_NIL);
+  }
+
+  consume_expected(TOKEN_SEMICOLON, "Expected ';' after variable declaration.");
+
+  define_global(global);
+}
+
+static void statement() {
+  if (match(TOKEN_PRINT)) {
+    print_statement();
+  } else {
+    expression_statement();
+  }
+}
+
+static void expression_statement() {
+  expression();
+  consume_expected(TOKEN_SEMICOLON, "Expected ';' after expression");
+  emit_byte(OP_POP);
+}
+
+static void print_statement() {
+  expression();
+  consume_expected(TOKEN_SEMICOLON, "Expected ';' after expression");
+  emit_byte(OP_PRINT);
+}
+
+static void variable(bool can_assign) {
+  named_variable(parser.previous, can_assign);
+}
+
+static void named_variable(lox_token name, bool can_assign) {
+  uint32_t arg = identifier_constant(&name);
+
+  if (can_assign && match(TOKEN_EQUAL)) {
+    expression();
+    if (arg <= UINT8_MAX) {
+      emit_bytes2(OP_SET_GLOBAL, (uint8_t)arg);
+    } else {
+      emit_byte(OP_SET_GLOBAL_LONG);
+      emit_word(arg);
+    }
+  } else {
+    if (arg <= UINT8_MAX) {
+      emit_bytes2(OP_GET_GLOBAL, (uint8_t)arg);
+    } else {
+      emit_byte(OP_GET_GLOBAL_LONG);
+      emit_word(arg);
+    }
   }
 }
 
 static void expression() { parse_precedence(PREC_ASSIGNMENT); }
 
-static void number() {
+static void number(bool can_assign) {
   lox_value value = lox_value_from_number(strtod(parser.previous.start, NULL));
   emit_constant(value);
 }
 
-static void grouping() {
+static void grouping(bool can_assign) {
   expression();
   consume_expected(TOKEN_RIGHT_PAREN, "Expected ')' after expression.");
 }
 
-static void unary() {
+static void unary(bool can_assign) {
   lox_token_type operator_type = parser.previous.type;
 
   parse_precedence(PREC_UNARY);
@@ -253,7 +418,7 @@ static void unary() {
   }
 }
 
-static void binary() {
+static void binary(bool can_assign) {
   lox_token_type operator_type = parser.previous.type;
   lox_parse_rule *rule = get_parse_rule(operator_type);
   parse_precedence(rule->precedence + 1);
@@ -294,7 +459,7 @@ static void binary() {
   }
 }
 
-static void literal() {
+static void literal(bool can_assign) {
   switch (parser.previous.type) {
   case TOKEN_TRUE:
     emit_byte(OP_TRUE);
@@ -310,8 +475,8 @@ static void literal() {
   }
 }
 
-static void string() {
-  lox_object_string *str = lox_object_string_new_consume(
-      (char *)(parser.previous.start + 1), parser.previous.length - 2, true);
+static void string(bool can_assign) {
+  lox_object_string *str = lox_object_string_new_copy(
+      (char *)(parser.previous.start + 1), parser.previous.length - 2);
   emit_constant(lox_value_from_object((lox_object *)str));
 }

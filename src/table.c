@@ -2,6 +2,7 @@
 #include "memory.h"
 #include "vm.h"
 #include <assert.h>
+#include <stdio.h>
 #include <string.h>
 
 void lox_hash_table_init(lox_hash_table *table) {
@@ -70,8 +71,13 @@ bool lox_hash_table_get(lox_hash_table *table, lox_value key,
   if (entry->key.type == VAL_EMPTY)
     return false;
 
-  *value = entry->value;
+  if (value != NULL)
+    *value = entry->value;
   return true;
+}
+
+bool lox_hash_table_has(lox_hash_table *table, lox_value key) {
+  return lox_hash_table_get(table, key, NULL);
 }
 
 lox_hash_table_entry *lox_hash_table_find_entry(lox_hash_table_entry *entries,

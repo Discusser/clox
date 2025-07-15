@@ -11,6 +11,12 @@ typedef struct {
   // strings table contains a key, it means that the given key is a string that
   // is currently interned.
   lox_hash_table strings;
+  lox_hash_table global_indices;
+  lox_value_array globals;
+#ifndef NDEBUG
+  // Reverse lookup table for getting global names from their index.
+  lox_hash_table global_names;
+#endif
   lox_object *objects;
 } lox_vm;
 

@@ -22,16 +22,21 @@ void lox_hash_table_free(lox_hash_table *table);
 // Copies the contents of `from` into `to`
 void lox_hash_table_copy_to(lox_hash_table *from, lox_hash_table *to);
 // Puts an entry with the given key and value into the table, expanding the
-// table if necessary. `key` should not be NULL. Returns false if the key didn't
-// exist previously in the table, or true if it did.
+// table if necessary. `key` should not be NULL. Returns true if the key didn't
+// exist previously in the table, or false if it did, that is, the return value
+// indicates if this key is a new key.
 bool lox_hash_table_put(lox_hash_table *table, lox_value key, lox_value value);
 // Removes an entry with the given key from the hash table. Returns true if the
 // entry was removed, or false if there was no entry with the given key.
 bool lox_hash_table_remove(lox_hash_table *table, lox_value key);
 // Retrieves the value associated with a key. The value is stored in the `value`
 // pointer passed to the function. Returns true if the key exists in the table,
-// or false if it doesn't, in which case `value` is unmodified.
+// or false if it doesn't, in which case `value` is unmodified. If `value` is
+// NULL, it is also unmodified.
 bool lox_hash_table_get(lox_hash_table *table, lox_value key, lox_value *value);
+// Returns true if the key exists in the table, or false if it doesn't. This is
+// equivalent to lox_hash_table_get(table, key, NULL)
+bool lox_hash_table_has(lox_hash_table *table, lox_value key);
 // Finds the entry where a key should go, given a list of entries and a
 // capacity. `key` should not be NULL
 lox_hash_table_entry *lox_hash_table_find_entry(lox_hash_table_entry *entries,
