@@ -1,5 +1,6 @@
 #include "debug.h"
 #include "chunk.h"
+#include "compiler.h"
 #include "vm.h"
 #include <stdio.h>
 
@@ -11,12 +12,15 @@ static int global_instruction(const char *name, lox_chunk *chunk, int offset);
 static int global_long_instruction(const char *name, lox_chunk *chunk,
                                    int offset);
 static int simple_instruction(const char *name, int offset);
+static int local_instruction(const char *name, lox_chunk *chunk, int offset);
 
 // This function returns a nil value if NDEBUG is set. Otherwise, it returns the
 // name of the global variable with the given index.
-static lox_value lox_get_global_name(uint32_t global);
+static lox_value lox_get_global_name(uint16_t global);
+static lox_value lox_get_local_name(uint16_t local);
 
 extern lox_vm vm;
+extern lox_compiler *compiler;
 
 void lox_disassemble_chunk(lox_chunk *chunk, const char *name) {
   printf("== Chunk '%s' ==\n", name);
@@ -83,6 +87,10 @@ int lox_disassemble_instruction(lox_chunk *chunk, int offset) {
     return global_instruction("OP_SET_GLOBAL", chunk, offset);
   case OP_SET_GLOBAL_LONG:
     return global_long_instruction("OP_SET_GLOBAL", chunk, offset);
+  case OP_GET_LOCAL:
+    return local_instruction("OP_GET_LOCAL", chunk, offset);
+  case OP_SET_LOCAL:
+    return local_instruction("OP_SET_LOCAL", chunk, offset);
   default:
     printf("Unknown opcode %d\n", instruction);
     return offset + 1;
@@ -100,11 +108,11 @@ static int constant_instruction(const char *name, lox_chunk *chunk,
 
 static int constant_long_instruction(const char *name, lox_chunk *chunk,
                                      int offset) {
-  uint32_t constant = *(uint32_t *)&chunk->code.values[offset + 1];
+  uint16_t constant = *(uint16_t *)&chunk->code.values[offset + 1];
   printf("%-16s index %4d value '", name, constant);
   lox_print_value(chunk->constants.values[constant]);
   printf("'\n");
-  return offset + 5;
+  return offset + 3;
 }
 
 static int global_instruction(const char *name, lox_chunk *chunk, int offset) {
@@ -117,11 +125,11 @@ static int global_instruction(const char *name, lox_chunk *chunk, int offset) {
 
 static int global_long_instruction(const char *name, lox_chunk *chunk,
                                    int offset) {
-  uint32_t global = *(uint32_t *)&chunk->code.values[offset + 1];
+  uint16_t global = *(uint16_t *)&chunk->code.values[offset + 1];
   printf("%-16s index %4d name  '", name, global);
   lox_print_value(lox_get_global_name(global));
   printf("'\n");
-  return offset + 5;
+  return offset + 3;
 }
 
 static int simple_instruction(const char *name, int offset) {
@@ -129,12 +137,33 @@ static int simple_instruction(const char *name, int offset) {
   return offset + 1;
 }
 
-static lox_value lox_get_global_name(uint32_t global) {
+static int local_instruction(const char *name, lox_chunk *chunk, int offset) {
+  uint8_t slot = chunk->code.values[offset + 1];
+  printf("%-16s index %4d name  '", name, slot);
+  lox_print_value(lox_get_local_name(slot));
+  printf("'\n");
+  return offset + 2;
+}
+
+static lox_value lox_get_global_name(uint16_t global) {
 #ifndef NDEBUG
   lox_value value;
   if (!lox_hash_table_get(&vm.global_names, lox_value_from_number(global),
                           &value)) {
     fprintf(stderr, "Could not find variable name for index %i\n", global);
+  }
+  return value;
+#else
+  return lox_value_from_nil();
+#endif
+}
+
+static lox_value lox_get_local_name(uint16_t local) {
+#ifndef NDEBUG
+  lox_value value;
+  if (!lox_hash_table_get(&vm.local_names, lox_value_from_number(local),
+                          &value)) {
+    fprintf(stderr, "Could not find variable name for index %i\n", local);
   }
   return value;
 #else

@@ -47,10 +47,6 @@ void lox_chunk_write_array(lox_chunk *chunk, uint8_t *bytes, int size,
   chunk->last_line = line;
 }
 
-void lox_chunk_write_word(lox_chunk *chunk, uint32_t word, int line) {
-  lox_chunk_write_array(chunk, (uint8_t *)&word, 4, line);
-}
-
 int lox_chunk_add_constant(lox_chunk *chunk, lox_value value) {
   value_array_push(&chunk->constants, value);
   return chunk->constants.size - 1;

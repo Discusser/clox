@@ -16,6 +16,7 @@ typedef struct {
 #ifndef NDEBUG
   // Reverse lookup table for getting global names from their index.
   lox_hash_table global_names;
+  lox_hash_table local_names;
 #endif
   lox_object *objects;
 } lox_vm;

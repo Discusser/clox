@@ -10,8 +10,8 @@ typedef enum {
   // Loads a constant onto the stack. Allows up to 2^8-1 different constants.
   // Parameters: index (1 byte)
   OP_CONSTANT,
-  // Loads a constant onto the stack. Allows up to 2^32-1 different constants.
-  // Parameters: index (4 bytes)
+  // Loads a constant onto the stack. Allows up to 2^16-1 different constants.
+  // Parameters: index (2 bytes)
   OP_CONSTANT_LONG,
   // Pushes the literal 'nil' onto the stack. Parameters: none
   OP_NIL,
@@ -62,20 +62,26 @@ typedef enum {
   // allowing up to 2^8-1 globals. Parameters: index (1 byte)
   OP_DEFINE_GLOBAL,
   // Defines a new global variable with the value on the top of the stack,
-  // allowing up to 2^32-1 globals. Parameters: index (4 bytes)
+  // allowing up to 2^16-1 globals. Parameters: index (2 bytes)
   OP_DEFINE_GLOBAL_LONG,
   // Pushes the value of the global with the given index onto the stack,
   // allowing up to 2^8-1 globals. Parameters: index (1 byte)
   OP_GET_GLOBAL,
   // Pushes the value of the global with the given index onto the stack,
-  // allowing up to 2^32-1 globals. Parameters: index (4 bytes)
+  // allowing up to 2^16-1 globals. Parameters: index (2 bytes)
   OP_GET_GLOBAL_LONG,
   // Sets the value of the global with the given index to the value on top of
   // the stack, allowing up to 2^8-1 globals. Parameters: index (1 byte)
   OP_SET_GLOBAL,
   // Sets the value of the global with the given index to the value on top of
-  // the stack, allowing up to 2^32-1 globals. Parameters: index (4 bytes)
+  // the stack, allowing up to 2^16-1 globals. Parameters: index (2 bytes)
   OP_SET_GLOBAL_LONG,
+  // Pushes the local variable with the given index to the top of the stack.
+  // Parameters: index (1 byte)
+  OP_GET_LOCAL,
+  // Sets the value of the local variable with the given index to the value at
+  // the top of the stack. Parameters: index (1 byte)
+  OP_SET_LOCAL,
   // Returns. Parameters: none
   OP_RETURN,
 } lox_op_code;
@@ -113,9 +119,6 @@ void lox_chunk_write(lox_chunk *chunk, uint8_t byte, int line);
 // `write_to_chunk`
 void lox_chunk_write_array(lox_chunk *chunk, uint8_t *bytes, int size,
                            int line);
-// Adds an integer at a given line to the chunk. The integer is converted to a
-// `uint8_t *` and written via `write_array_to_chunk`
-void lox_chunk_write_word(lox_chunk *chunk, uint32_t word, int line);
 // Adds a constant to the chunk. The constant's index is returned, which
 // corresponds to its index in `chunk->constants`
 int lox_chunk_add_constant(lox_chunk *chunk, lox_value value);

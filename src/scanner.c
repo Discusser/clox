@@ -149,7 +149,14 @@ lox_token_type identifier_type() {
   case 'a':
     return check_keyword(1, 2, "nd", TOKEN_AND);
   case 'c':
-    return check_keyword(1, 4, "lass", TOKEN_CLASS);
+    if (scanner.current - scanner.start > 1) {
+      switch (*(scanner.start + 1)) {
+      case 'o':
+        return check_keyword(1, 4, "onst", TOKEN_CONST);
+      case 'l':
+        return check_keyword(1, 4, "lass", TOKEN_CLASS);
+      }
+    }
   case 'e':
     return check_keyword(1, 3, "lse", TOKEN_ELSE);
   case 'f':
