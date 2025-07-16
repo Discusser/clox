@@ -4,7 +4,6 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#define LOX_STACK_INITIAL_SIZE 256
 #define LOX_MAX_LOCAL_COUNT UINT8_MAX + 1
 #define LOX_ARRAY_MIN_CAPACITY 8
 #define LOX_ARRAY_SCALE_FACTOR 2

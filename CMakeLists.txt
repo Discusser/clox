@@ -28,7 +28,9 @@ add_executable(
   src/table.c
   src/value.c
   src/vm.c)
+
 target_include_directories(
   clox
   PUBLIC include/
   PRIVATE private/)
+target_link_libraries(clox m)

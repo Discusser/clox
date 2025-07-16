@@ -4,15 +4,15 @@
 
 void lox_chunk_initialize(lox_chunk *chunk) {
   chunk->last_line = -1;
-  byte_array_initialize(&chunk->code);
-  int_array_initialize(&chunk->lines);
-  value_array_initialize(&chunk->constants);
+  lox_byte_array_initialize(&chunk->code);
+  lox_int_array_initialize(&chunk->lines);
+  lox_value_array_initialize(&chunk->constants);
 }
 
 void lox_chunk_free(lox_chunk *chunk) {
-  byte_array_free(&chunk->code);
-  int_array_free(&chunk->lines);
-  value_array_free(&chunk->constants);
+  lox_byte_array_free(&chunk->code);
+  lox_int_array_free(&chunk->lines);
+  lox_value_array_free(&chunk->constants);
   lox_chunk_initialize(chunk);
 }
 
@@ -23,7 +23,7 @@ void lox_chunk_write(lox_chunk *chunk, uint8_t byte, int line) {
 void lox_chunk_write_array(lox_chunk *chunk, uint8_t *bytes, int size,
                            int line) {
   for (int i = 0; i < size; i++) {
-    byte_array_push(&chunk->code, bytes[i]);
+    lox_byte_array_push(&chunk->code, bytes[i]);
   }
 
   if (chunk->last_line == line) {
@@ -31,11 +31,11 @@ void lox_chunk_write_array(lox_chunk *chunk, uint8_t *bytes, int size,
     // valid line number, then the lines array shouldn't be empty, but we never
     // know.
     if (chunk->lines.size == 0) {
-      int_array_grow_to(&chunk->lines, line, true);
+      lox_int_array_grow_to(&chunk->lines, line, true);
       chunk->lines.values[line - 1] = 0;
     }
   } else if (chunk->lines.size >= chunk->lines.capacity) {
-    int_array_grow_to(&chunk->lines, line, true);
+    lox_int_array_grow_to(&chunk->lines, line, true);
     chunk->lines.values[line - 1] = 0;
   }
 
@@ -48,7 +48,7 @@ void lox_chunk_write_array(lox_chunk *chunk, uint8_t *bytes, int size,
 }
 
 int lox_chunk_add_constant(lox_chunk *chunk, lox_value value) {
-  value_array_push(&chunk->constants, value);
+  lox_value_array_push(&chunk->constants, value);
   return chunk->constants.size - 1;
 }
 

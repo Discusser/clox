@@ -1,0 +1,57 @@
+program        → declaration* EOF ;
+
+declaration    → classDecl | varDecl | funDecl | statement ;
+
+classDecl      → "class" IDENTIFIER ( "<" IDENTIFIER )? "{" function* "}";
+varDecl        → ( "var" | "const" ) IDENTIFIER ( "=" expression )? ";" ;
+funDecl        → "fun" function ;
+function       → "static"? IDENTIFIER "(" parameters? ")" block ;
+anonFunction   → IDENTIFIER? "(" parameters? ")" block ;
+parameters     → IDENTIFIER ( "," IDENTIFIER )* ;
+switchCase     → "case" expression ":" statement*;
+defaultCase    → "default" ":" statement*;
+
+statement      → exprStmt | ifStmt | whileStmt | forStmt | continueStmt | breakStmt | returnStmt | switchStmt | block ;
+
+exprStmt       → expression ";" ;
+ifStmt         → "if" "(" expression ")" statement ( "else" statement )? ;
+whileStmt      → "while" "(" expression ")" statement ;
+forStmt        → "for" "(" (varDecl | exprStmt | ";") expression? ";" expression? ")" statement ;
+continueStmt   → "continue" ";" ;
+breakStmt      → "break" ";" ;
+returnStmt     → "return" expression? ";" ;
+switchStmt     → "switch" "(" expression ")" "{" switchCase* defaultCase? "}" ;
+block          → "{" declaration* "}" ; 
+
+expression     → comma ;
+comma          → assignment ( "," assignment )* ;
+assignment     → ( call "." )? IDENTIFIER "=" assignment | conditional ;
+conditional    → logic_or ( "?" expression ":" expression )? ;
+logic_or       → logic_and ( "or" logic_and )* ;
+logic_and      → equality ( "and" equality )* ;
+equality       → comparison ( ( "!=" | "==" ) comparison )* ;
+comparison     → term ( ( ">" | ">=" | "<" | "<=" ) term )* ;
+term           → factor ( ( "-" | "+" ) factor )* ;
+factor         → unary ( ( "/" | "*" ) unary )* ;
+unary          → ( "!" | "-" | "++" | "--" ) unary | postfix ;
+postfix        → call ( ( "++" | "--" ) call )* ;
+call           → primary | ( "(" arguments? ")" | "." IDENTIFIER )* ;
+primary        → NUMBER
+                | STRING 
+                | "true" 
+                | "false" 
+                | "nil" 
+                | "(" expression ")" 
+                | IDENTIFIER 
+                | "this" 
+                | "super" "." ( IDENTIFIER "::" )? IDENTIFIER 
+                | anonFunction;
+
+arguments      → assignment ( "," assignment )* ;
+
+A statement does not change the level of the stack, although it may push and pop to the stack internally, but all those operations should cancel out.
+An expression pushes a value onto the stack.
+Local variables are popped of at the end of the scope.
+
+
+

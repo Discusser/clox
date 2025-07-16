@@ -6,6 +6,7 @@
 #include "compiler.h"
 #include "debug.h"
 #include <assert.h>
+#include <math.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -27,11 +28,10 @@ static lox_value read_constant_long();
 lox_vm vm;
 
 void init_vm() {
-  value_array_initialize(&vm.stack);
-  value_array_grow_to(&vm.stack, LOX_STACK_INITIAL_SIZE, 0);
+  lox_value_array_initialize(&vm.stack);
   lox_hash_table_init(&vm.strings);
   lox_hash_table_init(&vm.global_indices);
-  value_array_initialize(&vm.globals);
+  lox_value_array_initialize(&vm.globals);
 #ifndef NDEBUG
   lox_hash_table_init(&vm.global_names);
   lox_hash_table_init(&vm.local_names);
@@ -41,10 +41,10 @@ void init_vm() {
 }
 
 void free_vm() {
-  value_array_free(&vm.stack);
+  lox_value_array_free(&vm.stack);
   lox_hash_table_free(&vm.strings);
   lox_hash_table_free(&vm.global_indices);
-  value_array_free(&vm.globals);
+  lox_value_array_free(&vm.globals);
 #ifndef NDEBUG
   lox_hash_table_free(&vm.global_names);
   lox_hash_table_free(&vm.local_names);
@@ -75,9 +75,9 @@ static void runtime_error(const char *format, ...) {
 
 static void reset_stack() { vm.stack.size = 0; }
 
-static void push(lox_value value) { value_array_push(&vm.stack, value); }
+static void push(lox_value value) { lox_value_array_push(&vm.stack, value); }
 
-static lox_value pop() { return value_array_pop(&vm.stack); }
+static lox_value pop() { return lox_value_array_pop(&vm.stack); }
 
 static lox_value *peek(int n) {
   return &vm.stack.values[vm.stack.size - 1 - n];
@@ -128,11 +128,12 @@ interpret_result run() {
 #define BINARY_OP(make_value, op)                                              \
   do {                                                                         \
     lox_value rhs = pop();                                                     \
-    lox_value *lhs = &vm.stack.values[vm.stack.size - 1];                      \
-    if (lhs->type == VAL_NUMBER && rhs.type == VAL_NUMBER) {                   \
-      *lhs = make_value(lhs->as.number op rhs.as.number);                      \
+    lox_value lhs = pop();                                                     \
+    if (lhs.type == VAL_NUMBER && rhs.type == VAL_NUMBER) {                    \
+      push(make_value(lhs.as.number op rhs.as.number));                        \
     } else {                                                                   \
-      runtime_error("Operands must be numbers.");                              \
+      runtime_error("Operands must be numbers. Found %i and %i instead",       \
+                    lhs.type, rhs.type);                                       \
       return INTERPRET_RUNTIME_ERROR;                                          \
     }                                                                          \
   } while (false)
@@ -232,7 +233,9 @@ interpret_result run() {
         pop();
         push(lox_value_from_number(lhs->as.number + rhs->as.number));
       } else {
-        runtime_error("Operands must be numbers.");
+        runtime_error(
+            "Operands must be numbers or strings. Found %i and %i instead",
+            lhs->type, rhs->type);
         return INTERPRET_RUNTIME_ERROR;
       }
       break;
@@ -245,6 +248,18 @@ interpret_result run() {
       break;
     case OP_DIVIDE:
       BINARY_OP(lox_value_from_number, /);
+      break;
+    case OP_MODULO:
+      do {
+        lox_value rhs = pop();
+        lox_value lhs = pop();
+        if (lhs.type == VAL_NUMBER && rhs.type == VAL_NUMBER) {
+          push(lox_value_from_number(fmod(lhs.as.number, rhs.as.number)));
+        } else {
+          runtime_error("Operands must be numbers.");
+          return INTERPRET_RUNTIME_ERROR;
+        }
+      } while (0);
       break;
     case OP_PRINT:
       lox_print_value(pop());
@@ -292,7 +307,10 @@ interpret_result run() {
         return INTERPRET_RUNTIME_ERROR;
       }
 
-      vm.globals.values[index] = pop();
+      // We don't pop the value because this is an expression, so it must return
+      // a value, which is in this case the value we give to the global, so we
+      // might aswell not touch the stack.
+      vm.globals.values[index] = *peek(0);
       break;
     }
     case OP_GET_LOCAL: {
@@ -305,6 +323,29 @@ interpret_result run() {
       vm.stack.values[slot] = *peek(0);
       break;
     }
+    case OP_JMP_TRUE: {
+      uint16_t offset = read_short();
+      if (!lox_is_falsey(*peek(0)))
+        vm.ip += offset;
+      break;
+    }
+    case OP_JMP_FALSE: {
+      uint16_t offset = read_short();
+      if (lox_is_falsey(*peek(0)))
+        vm.ip += offset;
+      break;
+    }
+    case OP_JMP: {
+      vm.ip += read_short();
+      break;
+    }
+    case OP_JMP_BACK: {
+      vm.ip -= read_short();
+      break;
+    }
+    case OP_DUP:
+      push(*peek(0));
+      break;
     default:
       printf("Unknown instruction %i\n", instruction);
       return INTERPRET_RUNTIME_ERROR;
@@ -318,8 +359,8 @@ interpret_result run() {
 static uint8_t read_byte() { return *vm.ip++; }
 
 static uint16_t read_short() {
-  uint16_t ret = *(uint16_t *)vm.ip;
-  vm.ip += sizeof(uint16_t);
+  uint16_t ret = vm.ip[0] << 8 | vm.ip[1];
+  vm.ip += 2;
   return ret;
 }
 

@@ -53,6 +53,7 @@ typedef enum {
   OP_SUBTRACT,
   OP_MULTIPLY,
   OP_DIVIDE,
+  OP_MODULO,
   // Prints the value at the top of the stack. Parameters: none
   OP_PRINT,
   // Pops the value off the top of the stack. This is mainly used by expression
@@ -82,6 +83,23 @@ typedef enum {
   // Sets the value of the local variable with the given index to the value at
   // the top of the stack. Parameters: index (1 byte)
   OP_SET_LOCAL,
+  // Offsets the instruction pointer by the given amount, essentially performing
+  // a jump, if the value on top of the stack is truthy. Parameters: offset (2
+  // bytes)
+  OP_JMP_TRUE,
+  // Offsets the instruction pointer by the given amount, essentially performing
+  // a jump, if the value on top of the stack is falsey. Parameters: offset (2
+  // bytes)
+  OP_JMP_FALSE,
+  // Jumps unconditionally by a given offset. Parameters: offset (2 bytes)
+  OP_JMP,
+  // Jumps backwards unconditionally by a given offset. Parameters: offset (2
+  // bytes)
+  OP_JMP_BACK,
+  // Pushes the value that is on top of the stack to the stack. The values are
+  // identical if they are objects. If they are primitive types, changes on one
+  // value will not necessarily reflect changes on the other. Parameters: none
+  OP_DUP,
   // Returns. Parameters: none
   OP_RETURN,
 } lox_op_code;

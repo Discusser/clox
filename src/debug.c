@@ -13,6 +13,8 @@ static int global_long_instruction(const char *name, lox_chunk *chunk,
                                    int offset);
 static int simple_instruction(const char *name, int offset);
 static int local_instruction(const char *name, lox_chunk *chunk, int offset);
+static int jump_instruction(const char *name, lox_chunk *chunk, int sign,
+                            int offset);
 
 // This function returns a nil value if NDEBUG is set. Otherwise, it returns the
 // name of the global variable with the given index.
@@ -65,6 +67,8 @@ int lox_disassemble_instruction(lox_chunk *chunk, int offset) {
     return simple_instruction("OP_MULTIPLY", offset);
   case OP_DIVIDE:
     return simple_instruction("OP_DIVIDE", offset);
+  case OP_MODULO:
+    return simple_instruction("OP_MODULO", offset);
   case OP_NEGATE:
     return simple_instruction("OP_NEGATE", offset);
   case OP_NOT:
@@ -91,6 +95,16 @@ int lox_disassemble_instruction(lox_chunk *chunk, int offset) {
     return local_instruction("OP_GET_LOCAL", chunk, offset);
   case OP_SET_LOCAL:
     return local_instruction("OP_SET_LOCAL", chunk, offset);
+  case OP_JMP_TRUE:
+    return jump_instruction("OP_JMP_TRUE", chunk, 1, offset);
+  case OP_JMP_FALSE:
+    return jump_instruction("OP_JMP_FALSE", chunk, 1, offset);
+  case OP_JMP:
+    return jump_instruction("OP_JMP", chunk, 1, offset);
+  case OP_JMP_BACK:
+    return jump_instruction("OP_JMP_BACK", chunk, -1, offset);
+  case OP_DUP:
+    return simple_instruction("OP_DUP", offset);
   default:
     printf("Unknown opcode %d\n", instruction);
     return offset + 1;
@@ -100,7 +114,7 @@ int lox_disassemble_instruction(lox_chunk *chunk, int offset) {
 static int constant_instruction(const char *name, lox_chunk *chunk,
                                 int offset) {
   uint8_t constant = chunk->code.values[offset + 1];
-  printf("%-16s index %4d value '", name, constant);
+  printf("%-16s index  %5d value '", name, constant);
   lox_print_value(chunk->constants.values[constant]);
   printf("'\n");
   return offset + 2;
@@ -108,16 +122,17 @@ static int constant_instruction(const char *name, lox_chunk *chunk,
 
 static int constant_long_instruction(const char *name, lox_chunk *chunk,
                                      int offset) {
-  uint16_t constant = *(uint16_t *)&chunk->code.values[offset + 1];
-  printf("%-16s index %4d value '", name, constant);
+  uint16_t constant =
+      chunk->code.values[offset + 1] << 8 | chunk->code.values[offset + 2];
+  printf("%-16s index  %5d value '", name, constant);
   lox_print_value(chunk->constants.values[constant]);
   printf("'\n");
   return offset + 3;
 }
 
 static int global_instruction(const char *name, lox_chunk *chunk, int offset) {
-  uint8_t global = *(uint8_t *)&chunk->code.values[offset + 1];
-  printf("%-16s index %4d name  '", name, global);
+  uint8_t global = chunk->code.values[offset + 1];
+  printf("%-16s index  %5d name  '", name, global);
   lox_print_value(lox_get_global_name(global));
   printf("'\n");
   return offset + 2;
@@ -125,8 +140,9 @@ static int global_instruction(const char *name, lox_chunk *chunk, int offset) {
 
 static int global_long_instruction(const char *name, lox_chunk *chunk,
                                    int offset) {
-  uint16_t global = *(uint16_t *)&chunk->code.values[offset + 1];
-  printf("%-16s index %4d name  '", name, global);
+  uint16_t global =
+      chunk->code.values[offset + 1] << 8 || chunk->code.values[offset + 2];
+  printf("%-16s index  %5d name  '", name, global);
   lox_print_value(lox_get_global_name(global));
   printf("'\n");
   return offset + 3;
@@ -139,10 +155,19 @@ static int simple_instruction(const char *name, int offset) {
 
 static int local_instruction(const char *name, lox_chunk *chunk, int offset) {
   uint8_t slot = chunk->code.values[offset + 1];
-  printf("%-16s index %4d name  '", name, slot);
+  printf("%-16s index  %5d name  '", name, slot);
   lox_print_value(lox_get_local_name(slot));
   printf("'\n");
   return offset + 2;
+}
+
+static int jump_instruction(const char *name, lox_chunk *chunk, int sign,
+                            int offset) {
+  uint16_t jump_offset = (uint16_t)(chunk->code.values[offset + 1] << 8);
+  jump_offset |= chunk->code.values[offset + 2];
+  printf("%-16s offset %5d to %d\n", name, sign * jump_offset,
+         offset + 3 + sign * jump_offset);
+  return offset + 3;
 }
 
 static lox_value lox_get_global_name(uint16_t global) {

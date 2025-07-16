@@ -20,7 +20,6 @@ static bool is_at_end();
 static bool is_identifier_char(char c);
 
 static char consume();
-static char consume_expect(lox_token_type type, const char *message);
 static void consume_extra();
 static bool match(char c);
 
@@ -74,6 +73,10 @@ lox_token scan_token() {
     return make_token(TOKEN_SLASH);
   case '*':
     return make_token(TOKEN_STAR);
+  case ':':
+    return make_token(TOKEN_COLON);
+  case '%':
+    return make_token(TOKEN_PERCENTAGE);
   case '!':
     return make_token(match('=') ? TOKEN_BANG_EQUAL : TOKEN_BANG);
   case '=':
@@ -148,15 +151,33 @@ lox_token_type identifier_type() {
   switch (*scanner.start) {
   case 'a':
     return check_keyword(1, 2, "nd", TOKEN_AND);
+  case 'b':
+    return check_keyword(1, 4, "reak", TOKEN_BREAK);
   case 'c':
     if (scanner.current - scanner.start > 1) {
       switch (*(scanner.start + 1)) {
+      case 'a':
+        return check_keyword(1, 3, "ase", TOKEN_CASE);
       case 'o':
-        return check_keyword(1, 4, "onst", TOKEN_CONST);
+        if (scanner.current - scanner.start > 2) {
+          switch (*(scanner.start + 2)) {
+          case 'n':
+            if (scanner.current - scanner.start > 3) {
+              switch (*(scanner.start + 3)) {
+              case 's':
+                return check_keyword(3, 2, "st", TOKEN_CONST);
+              case 't':
+                return check_keyword(3, 5, "tinue", TOKEN_CONTINUE);
+              }
+            }
+          }
+        }
       case 'l':
         return check_keyword(1, 4, "lass", TOKEN_CLASS);
       }
     }
+  case 'd':
+    return check_keyword(1, 6, "efault", TOKEN_DEFAULT);
   case 'e':
     return check_keyword(1, 3, "lse", TOKEN_ELSE);
   case 'f':
@@ -181,7 +202,15 @@ lox_token_type identifier_type() {
   case 'r':
     return check_keyword(1, 5, "eturn", TOKEN_RETURN);
   case 's':
-    return check_keyword(1, 4, "uper", TOKEN_SUPER);
+    if (scanner.current - scanner.start > 1) {
+      switch (scanner.start[1]) {
+      case 'u':
+        return check_keyword(1, 4, "uper", TOKEN_SUPER);
+      case 'w':
+        return check_keyword(1, 5, "witch", TOKEN_SWITCH);
+      }
+    }
+    break;
   case 't':
     if (scanner.current - scanner.start > 1) {
       switch (scanner.start[1]) {
@@ -214,8 +243,6 @@ lox_token_type check_keyword(int start, int length, const char *rest,
 bool is_at_end() { return peek() == '\0'; }
 
 char consume() { return *scanner.current++; }
-
-char consume_expect(lox_token_type type, const char *message) {}
 
 void consume_extra() {
   for (;;) {
