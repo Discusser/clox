@@ -1,0 +1,1 @@
+[line 3:7] ERROR at 'a': Cannot redeclare variable as const.

@@ -1,0 +1,9 @@
+var first = "first";
+var second = 2;
+var third = nil;
+var fourth = false;
+print first;
+print second;
+print third;
+print fourth;
+print second;

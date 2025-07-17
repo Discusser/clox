@@ -132,8 +132,7 @@ interpret_result run() {
     if (lhs.type == VAL_NUMBER && rhs.type == VAL_NUMBER) {                    \
       push(make_value(lhs.as.number op rhs.as.number));                        \
     } else {                                                                   \
-      runtime_error("Operands must be numbers. Found %i and %i instead",       \
-                    lhs.type, rhs.type);                                       \
+      runtime_error("Operands must be numbers.");                              \
       return INTERPRET_RUNTIME_ERROR;                                          \
     }                                                                          \
   } while (false)
@@ -233,9 +232,7 @@ interpret_result run() {
         pop();
         push(lox_value_from_number(lhs->as.number + rhs->as.number));
       } else {
-        runtime_error(
-            "Operands must be numbers or strings. Found %i and %i instead",
-            lhs->type, rhs->type);
+        runtime_error("Operands must be numbers or strings.");
         return INTERPRET_RUNTIME_ERROR;
       }
       break;

@@ -1,0 +1,8 @@
+switch (5) {
+  default:
+    print 1;
+  case 5:
+    print 2;
+  default:
+    print 3;
+}

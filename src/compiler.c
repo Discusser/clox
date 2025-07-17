@@ -671,6 +671,9 @@ static void switch_statement() {
       switch_case();
       is_default_last = false;
     } else {
+      // This is supposed to be unreachable, as default_case and switch_case
+      // look for either '}', 'case', or 'default' in order to stop the current
+      // case, so we can't really write a test for this error.
       error("Expected 'default' or 'case' in switch statement.");
     }
   }

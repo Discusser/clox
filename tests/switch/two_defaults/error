@@ -1,0 +1,1 @@
+[line 6:3] ERROR at 'default': Cannot have more than one default case in switch.
