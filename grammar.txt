@@ -1,57 +1,91 @@
-program        → declaration* EOF ;
+# This file contains a list of rules that describe clox's syntax.
+# Each rule starts with the name, an arrow, and then an expression which shows 
+# what it should be replaced with.
+# The semicolon at the end of a rule is there to indicate that the rule is over.
+#
+# There are a few special characters that allow defining rules with more ease:
+# '|' : or
+#   a → b | c ;
+#   # is equivalent to
+#   a → b ;
+#   a → c ;
+# '(' ')' : grouping, simply used to avoid ambiguity
+# '?' : optional
+#   a → b c? ;
+#   # is equivalent to
+#   a → b c ;
+#   a → b ;
+# '+' : repeatable
+#   a → a b+ ;
+#   # is equivalent to
+#   a → a b ;
+#   b → b <expr> ;
+#   b → <expr> ;
+# '*' : optional repeatable
+#   a → b c* ;
+#   # is equivalent to
+#   a → b (c+)? ;
+# '#' : comment, any line that starts with this character is not part of the grammar
+# '[ from-to ]' : range of characters
+#   a → [ \x00-\x7f ] ;
+#   # is equivalent to
+#   a → \x00 | \x01 | \x02 | <...> | \x7d | \x7e | \x7f ;
+# '\x' : hexadecimal number
+#   \x3f
+#   # is equivalent to
+#   63
 
-declaration    → classDecl | varDecl | funDecl | statement ;
+# GRAMMAR START ---------------------------------------------------------------
+program            → declaration* EOF ;
 
-classDecl      → "class" IDENTIFIER ( "<" IDENTIFIER )? "{" function* "}";
-varDecl        → ( "var" | "const" ) IDENTIFIER ( "=" expression )? ";" ;
-funDecl        → "fun" function ;
-function       → "static"? IDENTIFIER "(" parameters? ")" block ;
-anonFunction   → IDENTIFIER? "(" parameters? ")" block ;
-parameters     → IDENTIFIER ( "," IDENTIFIER )* ;
-switchCase     → "case" expression ":" statement*;
-defaultCase    → "default" ":" statement*;
+declaration        → variable_declaration | statement ;
+variable_declaration
+                   → ( "var" | "const" ) identifier ( "=" expression )? ";" ;
 
-statement      → exprStmt | ifStmt | whileStmt | forStmt | continueStmt | breakStmt | returnStmt | switchStmt | block ;
+statement          → print_statement | break_statement | continue_statement |
+                     switch_statement | for_statement | while_statement |
+                     if_statement | block | expression_statement ;
+print_statement    → "print" expression ";" ;
+break_statement    → "break" ";" ;
+continue_statement → "continue" ";" ;
+switch_statement   → "switch" "(" expression ")" "{" ( default_case | switch_case )* "}" ;
+for_statement      → "for" "(" ( variable_declaration | expression_statement | ";" ) 
+                               ( ( expression ";" ) | ";" )
+                               ( expression )? ")" statement ;
+while_statement    → "while" "(" expression ")" statement ;
+if_statement       → "if" "(" expression ")" statement ( "else" statement )? ;
+block              → "{" declaration? "}" ;
+expression_statement
+                   → expression ";" ;
 
-exprStmt       → expression ";" ;
-ifStmt         → "if" "(" expression ")" statement ( "else" statement )? ;
-whileStmt      → "while" "(" expression ")" statement ;
-forStmt        → "for" "(" (varDecl | exprStmt | ";") expression? ";" expression? ")" statement ;
-continueStmt   → "continue" ";" ;
-breakStmt      → "break" ";" ;
-returnStmt     → "return" expression? ";" ;
-switchStmt     → "switch" "(" expression ")" "{" switchCase* defaultCase? "}" ;
-block          → "{" declaration* "}" ; 
+default_case       → "default" ":" statement*
+switch_case        → "switch" expression ":" statement* ;
 
-expression     → comma ;
-comma          → assignment ( "," assignment )* ;
-assignment     → ( call "." )? IDENTIFIER "=" assignment | conditional ;
-conditional    → logic_or ( "?" expression ":" expression )? ;
-logic_or       → logic_and ( "or" logic_and )* ;
-logic_and      → equality ( "and" equality )* ;
-equality       → comparison ( ( "!=" | "==" ) comparison )* ;
-comparison     → term ( ( ">" | ">=" | "<" | "<=" ) term )* ;
-term           → factor ( ( "-" | "+" ) factor )* ;
-factor         → unary ( ( "/" | "*" ) unary )* ;
-unary          → ( "!" | "-" | "++" | "--" ) unary | postfix ;
-postfix        → call ( ( "++" | "--" ) call )* ;
-call           → primary | ( "(" arguments? ")" | "." IDENTIFIER )* ;
-primary        → NUMBER
-                | STRING 
-                | "true" 
-                | "false" 
-                | "nil" 
-                | "(" expression ")" 
-                | IDENTIFIER 
-                | "this" 
-                | "super" "." ( IDENTIFIER "::" )? IDENTIFIER 
-                | anonFunction;
+primary            → grouping | unary | variable | string | number | literal ;
+call               → call | primary ;
+unary              → ( "!" | "-" )? ( unary | call ) ;
+factor             → ( "/" | "*" | "%" )? ( factor | unary ) ;
+term               → ( "-" | "+" )? ( term | factor ) ;
+comparison         → comparison | term ;
+equality           → ( "!=" | "==" | ">" | ">=" | "<" | "<=" )? ( equality | comparison ) ;
+and                → and | equality ;
+or                 → or | and ;
+assignment         → assignment | or ;
 
-arguments      → assignment ( "," assignment )* ;
+grouping           → "(" expression ")"
+variable           → identifier ( "=" expression )?
+string             → '"' ( any_character & !( EOF | '"') )* '"'
+number             → digit* ( "." digit+ )?
+literal            → "false" | "true" | "nil"
 
-A statement does not change the level of the stack, although it may push and pop to the stack internally, but all those operations should cancel out.
-An expression pushes a value onto the stack.
-Local variables are popped of at the end of the scope.
+# Matches any character having an index between 0 and 127 (so that it can fit in a C char)
+any_character      → [ \x00-\x7f ]
+# GRAMMAR END -----------------------------------------------------------------
 
 
+# A statement does not change the level of the stack, although it may push and 
+# pop to the stack internally, all those operations should cancel out.
 
+# An expression pushes a value onto the stack.
+
+# Local variables are popped of at the end of the scope.
