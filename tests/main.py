@@ -86,9 +86,10 @@ def make_test(dir: str, files: list[str]) -> Test | None:
     return Test(dir, input, output, error, source_file)
 
 
-def find_tests() -> dict[str, list[Test]]:
+def find_tests() -> tuple[dict[str, list[Test]], int]:
     dirname = os.path.dirname(__file__)
     tests: dict[str, list[Test]] = {}
+    skipped = 0
     for subdir, dirs, files in os.walk(dirname):
         if len(dirs) == 0 and len(files) > 0:
             test = make_test(subdir, files)
@@ -98,12 +99,14 @@ def find_tests() -> dict[str, list[Test]]:
                     tests[group].append(test)
                 else:
                     tests[group] = [test]
+            else:
+                skipped += 1
 
     # Sort the tests because it's prettier
     for group_tests in tests.values():
         group_tests.sort()
 
-    return tests
+    return tests, skipped
 
 
 def run_test(clox_executable: str, test: Test) -> tuple[bool, str, str]:
@@ -114,29 +117,22 @@ def run_test(clox_executable: str, test: Test) -> tuple[bool, str, str]:
         stderr=PIPE,
         text=True,
     )
-    stdout, stderr = proc.communicate(test.input)
+    stdout, stderr = proc.communicate(test.input, timeout=1)
     result = False
-    if test.output is not None:
-        result = stdout == test.output
-    if test.error is not None:
-        result = stderr == test.error
+    result = stdout == test.output if test.output is not None else len(stdout) == 0
+    result = stderr == test.error if test.error is not None else len(stderr) == 0
 
     return result, stdout, stderr
 
 
 def search_clox(glob_pattern: str) -> str | None:
-    print(f"{info2(f'Searching in {glob_pattern}')}. ", end="")
-    matches = glob.glob(glob_pattern)
+    print(f"{info2(f'Searching in {glob_pattern}. ')}", end="")
+    matches = glob.glob(glob_pattern, recursive=True)
     if len(matches) == 1:
-        print(f"{success(f'Found executable at {matches[0]}')}.")
+        print(f"{success(f'Found executable at {matches[0]}')}")
         return matches[0]
     elif len(matches) > 1:
-        print(f"{info2('Found multiple matches. ')}", end="")
-        for match in matches:
-            if "release" in match:
-                print(f"{success(f'Taking {match}')}.")
-                return match
-        print(f"{warn(f'Could not find a release executable, taking {matches[0]}')}.")
+        print(f"{info2(f'Found multiple matches. Taking {matches[0]}')}")
         return matches[0]
     else:
         print("")
@@ -145,19 +141,28 @@ def search_clox(glob_pattern: str) -> str | None:
 
 def try_get_clox_executable_path() -> str:
     clox_executable = None
+    glob_patterns = ["./**/clox", "../build/**/clox", "../**/clox"]
     if len(argv) == 2:
-        clox_executable = argv[1]
+        if os.path.isfile(argv[1]):
+            clox_executable = argv[1]
+            return clox_executable
+        else:
+            for i, pattern in enumerate(glob_patterns):
+                glob_patterns[i] = pattern.replace("**", f"**/{argv[1]}/**")
+            print(
+                f"{info2(f"Looking for clox executable that matches pattern '{argv[1]}'")}"
+            )
     else:
         print(f"{info2('clox executable path not specified')}")
-        glob_patterns = ["./**/clox", "../build/**/clox", "../**/clox"]
-        for pattern in glob_patterns:
-            res = search_clox(pattern)
-            if res is not None:
-                clox_executable = res
-                break
-        if clox_executable is None:
-            print(f"{error('Could not find clox executable')}")
-            exit(1)
+
+    for pattern in glob_patterns:
+        res = search_clox(pattern)
+        if res is not None:
+            clox_executable = res
+            break
+    if clox_executable is None:
+        print(f"{error('Could not find clox executable')}")
+        exit(1)
     return clox_executable
 
 
@@ -182,13 +187,16 @@ def get_diff_str(expected: str, found: str):
 
 
 def compare_outputs(expected: str | None, found: str, name: str):
+    if expected == found:
+        return
+
     if expected is not None:
         print(f"    {error(f'Expected ({name})')}:")
         print(f"{expected}", end="")
         if len(found) > 0:
             print(f"    {info2(f'Found ({name})')}:")
             print(get_diff_str(expected, found), end="")
-        elif len(expected) > 0:
+        else:
             print(f"    {warn(f'Found nothing in {name}')}")
     if expected is None and len(found) > 0:
         print(f"    {error(f'Expected nothing ({name})')}")
@@ -196,7 +204,7 @@ def compare_outputs(expected: str | None, found: str, name: str):
         print(f"{found}")
 
 
-def run_tests(tests: dict[str, list[Test]], clox_executable: str):
+def run_tests(tests: dict[str, list[Test]], skipped: int, clox_executable: str):
     total = 0
     total_passes = 0
     total_fails = 0
@@ -212,7 +220,7 @@ def run_tests(tests: dict[str, list[Test]], clox_executable: str):
             else:
                 print(f"  {error(f"Test '{test_relative}' failed")}")
                 compare_outputs(test.output, stdout, "stdout")
-                compare_outputs(test.error, stderr, "stdout")
+                compare_outputs(test.error, stderr, "stderr")
                 fails += 1
         subtotal = passes + fails
         total += subtotal
@@ -225,11 +233,19 @@ def run_tests(tests: dict[str, list[Test]], clox_executable: str):
     print(
         f"{info('Summary')}: {success(f'{total_passes}/{total} passed')} {', ' + error(f'{total_fails}/{total} failed') if total_fails > 0 else ''}"
     )
+    if skipped > 0:
+        print(
+            warn(
+                f"Skipped {skipped} test{'s' if skipped > 1 else ''}. This probably means some tests were not created correctly and should be fixed"
+            )
+        )
 
 
 def main():
     if len(argv) > 2:
-        print(f"Usage: {os.path.relpath(__file__, os.getcwd())} [clox_executable_path]")
+        print(
+            f"Usage: {os.path.relpath(__file__, os.getcwd())} [clox_executable_path | pattern]"
+        )
         exit(1)
 
     term = os.getenv("TERM")
@@ -239,8 +255,8 @@ def main():
             info_color = "\033[38;5;253m"
 
     clox_executable = try_get_clox_executable_path()
-    tests = find_tests()
-    run_tests(tests, clox_executable)
+    tests, skipped = find_tests()
+    run_tests(tests, skipped, clox_executable)
 
 
 if __name__ == "__main__":
