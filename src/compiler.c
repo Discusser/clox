@@ -545,12 +545,8 @@ static void emit_break() {
 }
 
 static void emit_continue() {
-  if (compiler->continue_jump_to == -1) {
-    error("Invalid location for 'continue' to jump to.");
-    return;
-  }
   emit_jump_back(compiler->continue_jump_to);
-  if (!compiler->in_continueable) {
+  if (!compiler->in_continueable || compiler->continue_jump_to == -1) {
     error("Cannot have 'continue' statement outside of loop.");
   }
 }
@@ -774,6 +770,7 @@ static void for_statement() {
 static void while_statement() {
   bool prevb = compiler->in_breakable;
   bool prevc = compiler->in_continueable;
+  int prevjmp = compiler->continue_jump_to;
   compiler->in_breakable = true;
   compiler->in_continueable = true;
 
@@ -786,6 +783,7 @@ static void while_statement() {
 
   consume_expected(TOKEN_RIGHT_PAREN, "Expected ')' after expression");
 
+  compiler->continue_jump_to = loop_start;
   int end_jump = emit_jump(OP_JMP_FALSE);
   emit_byte(OP_POP);
   statement();
@@ -796,6 +794,7 @@ static void while_statement() {
 
   compiler->in_breakable = prevb;
   compiler->in_continueable = prevc;
+  compiler->continue_jump_to = prevjmp;
 }
 
 static void if_statement() {
