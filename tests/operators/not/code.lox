@@ -1,0 +1,8 @@
+fun test() {}
+
+print !nil;
+print !true;
+print !false;
+print !5;
+print !0;
+print !test;

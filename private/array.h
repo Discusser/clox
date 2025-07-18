@@ -19,6 +19,7 @@
   void lox_##name##_grow(lox_##name *name);                                    \
   void lox_##name##_grow_to(lox_##name *name, size_t min_size, int zeroed);    \
   void lox_##name##_grow_zeroed(lox_##name *name);                             \
+  void lox_##name##_resize(lox_##name *name, size_t size);                     \
   void lox_##name##_clear(lox_##name *name);
 
 // Creates all the function definitions for a dynamic array type. See also
@@ -37,10 +38,9 @@
     if (name->size >= name->capacity) {                                        \
       lox_##name##_grow(name);                                                 \
     }                                                                          \
-    name->values[name->size] = value;                                          \
-    name->size++;                                                              \
+    name->values[name->size++] = value;                                        \
   }                                                                            \
-  type lox_##name##_pop(lox_##name *name) {                                    \
+  inline type lox_##name##_pop(lox_##name *name) {                             \
     return name->values[--name->size];                                         \
   }                                                                            \
   void lox_##name##_grow(lox_##name *name) {                                   \
@@ -48,17 +48,23 @@
   }                                                                            \
   void lox_##name##_grow_to(lox_##name *name, size_t min_size, int zeroed) {   \
     int previous_capacity = name->capacity;                                    \
-    name->capacity = GROW_CAPACITY(previous_capacity);                         \
-    if (min_size > name->capacity)                                             \
-      name->capacity = min_size;                                               \
-    name->values =                                                             \
-        GROW_ARRAY(type, name->values, previous_capacity, name->capacity);     \
+    int capacity = name->capacity;                                             \
+    capacity = GROW_CAPACITY(capacity);                                        \
+    if (min_size > capacity)                                                   \
+      capacity = min_size;                                                     \
+    lox_##name##_resize(name, capacity);                                       \
     if (zeroed && name->capacity - previous_capacity > 0)                      \
       memset(&name->values[previous_capacity], '\0',                           \
              (name->capacity - previous_capacity) * sizeof(type));             \
   }                                                                            \
   void lox_##name##_grow_zeroed(lox_##name *name) {                            \
     lox_##name##_grow_to(name, name->size + 1, 1);                             \
+  }                                                                            \
+  void lox_##name##_resize(lox_##name *name, size_t size) {                    \
+    name->values = GROW_ARRAY(type, name->values, name->capacity, size);       \
+    name->capacity = size;                                                     \
+    if (size < name->size)                                                     \
+      name->size = size;                                                       \
   }                                                                            \
   void lox_##name##_clear(lox_##name *name) { lox_##name##_free(name); }
 

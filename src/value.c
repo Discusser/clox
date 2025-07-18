@@ -3,6 +3,7 @@
 #include <string.h>
 #include "memory.h"
 #include "object.h"
+#include "vm.h"
 
 DEFINE_LOX_ARRAY(lox_value, value_array);
 
@@ -14,30 +15,56 @@ void lox_print_value(lox_value value) {
   case VAL_NIL:
     printf("nil");
     break;
-  case VAL_NUMBER:
-    printf("%g", value.as.number);
+  case VAL_NUMBER: {
+    char *buf;
+    int len;
+    if ((len = asprintf(&buf, "%f", value.as.number)) == -1) {
+      runtime_error(
+          "An internal error occurred while trying to print a number.");
+    }
+    bool found_dot = false;
+    int previous_digit_index = -1;
+    for (int i = 0; i < len; i++) {
+      if (buf[i] == '.') {
+        found_dot = true;
+        previous_digit_index = i - 1;
+      }
+      if (found_dot) {
+        if ('1' <= buf[i] && buf[i] <= '9')
+          previous_digit_index = i;
+      }
+    }
+    if (found_dot)
+      len = previous_digit_index + 1;
+    printf("%.*s", len, buf);
+    FREE(char, buf);
     break;
+  }
   case VAL_OBJECT:
     lox_print_object(value.as.object);
+    break;
+  case VAL_EMPTY:
     break;
   }
 }
 
-lox_value lox_value_from_bool(bool val) {
+inline lox_value lox_value_from_bool(bool val) {
   return (lox_value){VAL_BOOL, {.boolean = val}};
 }
 
-lox_value lox_value_from_nil() { return (lox_value){VAL_NIL, {.number = 0}}; }
+inline lox_value lox_value_from_nil() {
+  return (lox_value){VAL_NIL, {.number = 0}};
+}
 
-lox_value lox_value_from_number(double val) {
+inline lox_value lox_value_from_number(double val) {
   return (lox_value){VAL_NUMBER, {.number = val}};
 }
 
-lox_value lox_value_from_object(lox_object *object) {
+inline lox_value lox_value_from_object(lox_object *object) {
   return (lox_value){VAL_OBJECT, {.object = object}};
 }
 
-lox_value lox_value_from_empty() {
+inline lox_value lox_value_from_empty() {
   return (lox_value){VAL_EMPTY, {.number = 0}};
 }
 
@@ -81,8 +108,18 @@ uint32_t lox_value_hash_number(double number) {
   return cast.ints[0] + cast.ints[1];
 }
 
-bool lox_value_is_object(lox_value value) { return value.type == VAL_OBJECT; }
+inline bool lox_value_is_object(lox_value value) {
+  return value.type == VAL_OBJECT;
+}
 
-bool lox_value_is_string(lox_value value) {
+inline bool lox_value_is_string(lox_value value) {
   return lox_value_is_object(value) && value.as.object->type == OBJ_STRING;
+}
+
+inline bool lox_value_is_function(lox_value value) {
+  return lox_value_is_object(value) && value.as.object->type == OBJ_FUNCTION;
+}
+
+inline bool lox_value_is_native(lox_value value) {
+  return lox_value_is_object(value) && value.as.object->type == OBJ_NATIVE;
 }

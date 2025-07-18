@@ -16,9 +16,16 @@ typedef struct {
   bool is_constant;
 } lox_local;
 
+typedef enum { TYPE_FUNCTION, TYPE_SCRIPT } lox_function_type;
+
 DECLARE_LOX_ARRAY(lox_local, local_array);
 
-typedef struct {
+typedef struct lox_compiler lox_compiler;
+
+typedef struct lox_compiler {
+  lox_compiler *enclosing;
+  lox_object_function *function;
+  lox_function_type function_type;
   lox_local_array locals;
   // Hash table that associates a global variable index with a value. If an
   // entry for an index exists, it means that the global variable associated
@@ -28,9 +35,9 @@ typedef struct {
   lox_int_array breaks;
   int continue_jump_to;
   int scope_depth;
-  bool in_breakable;
-  bool in_continueable;
+  int continue_depth;
+  int break_depth;
 } lox_compiler;
 
 // Compiles code from a string, and writes the bytecode to chunk.
-bool lox_compiler_compile(const char *source, lox_chunk *chunk);
+lox_object_function *lox_compiler_compile(const char *source);

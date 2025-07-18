@@ -1,6 +1,5 @@
 #pragma once
 
-#include "common.h"
 #include "value.h"
 
 // This enum contains all the opcodes for our virtual machine.
@@ -59,6 +58,8 @@ typedef enum {
   // Pops the value off the top of the stack. This is mainly used by expression
   // statements, since their result is discarded. Parameters: none
   OP_POP,
+  // Pops n values off the top of the stack. Parameters: count (2 bytes)
+  OP_POPN,
   // Defines a new global variable with the value on the top of the stack,
   // allowing up to 2^8-1 globals. Parameters: index (1 byte)
   OP_DEFINE_GLOBAL,
@@ -100,11 +101,20 @@ typedef enum {
   // identical if they are objects. If they are primitive types, changes on one
   // value will not necessarily reflect changes on the other. Parameters: none
   OP_DUP,
-  // Returns. Parameters: none
+  // Calls the function on top of the stack. The stack, should contain the
+  // function's parameters in reverse order, whose amount is specified by the
+  // count parameter, and finally the function variable, stored as a
+  // lox_object_function. This opcode doesn't actually pop any values from the
+  // stack. Instead, the called function acts on the values already present on
+  // the stack. Parameters: arg_count (1 byte)
+  OP_CALL,
+  // Pops the value on top of the stack, pops the current frame, and pushes the
+  // initial popped value (the return value) onto the stack. This pops the
+  // current frame and goes to the previous frame. Parameters: none
   OP_RETURN,
 } lox_op_code;
 
-typedef struct {
+typedef struct lox_chunk {
   // The line number of the previous byte that was written to the chunk. This is
   // used to store the lines using run-length encoding in `lines`.
   int last_line;

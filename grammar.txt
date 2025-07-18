@@ -38,13 +38,17 @@
 # GRAMMAR START ---------------------------------------------------------------
 program            → declaration* EOF ;
 
-declaration        → variable_declaration | statement ;
+declaration        → variable_declaration | function_declaration | statement ;
 variable_declaration
                    → ( "var" | "const" ) identifier ( "=" expression )? ";" ;
+function_declaration
+                   → "fun" identifier "(" arguments ")" block
+
+arguments          → ( ( identifier "," )* identifier )?
 
 statement          → print_statement | break_statement | continue_statement |
                      switch_statement | for_statement | while_statement |
-                     if_statement | block | expression_statement ;
+                     if_statement | block | expression_statement | return_statement;
 print_statement    → "print" expression ";" ;
 break_statement    → "break" ";" ;
 continue_statement → "continue" ";" ;
@@ -57,20 +61,22 @@ if_statement       → "if" "(" expression ")" statement ( "else" statement )? ;
 block              → "{" declaration? "}" ;
 expression_statement
                    → expression ";" ;
+return_statement   → "return" expression ";" ;
 
 default_case       → "default" ":" statement*
 switch_case        → "switch" expression ":" statement* ;
 
 primary            → grouping | unary | variable | string | number | literal ;
-call               → call | primary ;
-unary              → ( "!" | "-" )? ( unary | call ) ;
-factor             → ( "/" | "*" | "%" )? ( factor | unary ) ;
-term               → ( "-" | "+" )? ( term | factor ) ;
-comparison         → comparison | term ;
-equality           → ( "!=" | "==" | ">" | ">=" | "<" | "<=" )? ( equality | comparison ) ;
-and                → and | equality ;
-or                 → or | and ;
-assignment         → assignment | or ;
+call               → primary | ( "(" arguments ")" )*;
+unary              → ( "!" | "-" )* call ;
+factor             → unary ( ( "/" | "*" | "%" ) unary )* ;
+term               → factor ( ( "-" | "+" ) factor )* ;
+comparison         → term ( ( ">" | ">=" | "<" | "<=" ) term )* ;
+equality           → comparison ( ( "!=" | "==" ) comparison )* ;
+and                → equality ( "and" equality )* ;
+or                 → and ( " or " and )* ;
+assignment         → or ;
+expression         → assignment ;
 
 grouping           → "(" expression ")"
 variable           → identifier ( "=" expression )?
@@ -80,6 +86,7 @@ literal            → "false" | "true" | "nil"
 
 # Matches any character having an index between 0 and 127 (so that it can fit in a C char)
 any_character      → [ \x00-\x7f ]
+digit              → [ "0"-"9" ]
 # GRAMMAR END -----------------------------------------------------------------
 
 

@@ -1,12 +1,18 @@
 #pragma once
 
-#include "chunk.h"
+#include "common.h"
 #include "table.h"
 
 typedef struct {
-  lox_chunk *chunk;
+  lox_object_function *function;
   uint8_t *ip;
+  int slots_offset;
+} lox_call_frame;
+
+typedef struct {
+  lox_call_frame frames[LOX_MAX_CALL_FRAMES];
   lox_value_array stack;
+  int frame_count;
   // Every string created in lox is interned into this hash table. If the
   // strings table contains a key, it means that the given key is a string that
   // is currently interned.
@@ -33,5 +39,10 @@ void free_vm();
 interpret_result interpret(const char *source);
 interpret_result run();
 
+void runtime_error(const char *format, ...);
+
 bool lox_is_falsey(lox_value value);
 bool lox_values_equal(lox_value lhs, lox_value rhs);
+
+void define_native(lox_vm *vm, const char *name, lox_native_function function,
+                   int arity);

@@ -1,0 +1,5 @@
+fun a() {
+  return 5;
+}
+
+print a();

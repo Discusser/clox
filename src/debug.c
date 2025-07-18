@@ -15,6 +15,7 @@ static int simple_instruction(const char *name, int offset);
 static int local_instruction(const char *name, lox_chunk *chunk, int offset);
 static int jump_instruction(const char *name, lox_chunk *chunk, int sign,
                             int offset);
+static int call_instruction(const char *name, lox_chunk *chunk, int offset);
 
 // This function returns a nil value if NDEBUG is set. Otherwise, it returns the
 // name of the global variable with the given index.
@@ -105,6 +106,8 @@ int lox_disassemble_instruction(lox_chunk *chunk, int offset) {
     return jump_instruction("OP_JMP_BACK", chunk, -1, offset);
   case OP_DUP:
     return simple_instruction("OP_DUP", offset);
+  case OP_CALL:
+    return call_instruction("OP_CALL", chunk, offset);
   default:
     printf("Unknown opcode %d\n", instruction);
     return offset + 1;
@@ -168,6 +171,12 @@ static int jump_instruction(const char *name, lox_chunk *chunk, int sign,
   printf("%-16s offset %5d to %d\n", name, sign * jump_offset,
          offset + 3 + sign * jump_offset);
   return offset + 3;
+}
+
+static int call_instruction(const char *name, lox_chunk *chunk, int offset) {
+  uint8_t arity = chunk->code.values[offset + 1];
+  printf("%-16s arity  %5d\n", name, arity);
+  return offset + 2;
 }
 
 static lox_value lox_get_global_name(uint16_t global) {

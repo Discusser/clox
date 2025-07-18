@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.10)
+cmake_minimum_required(VERSION 3.14)
 
 project(
   clox
@@ -6,11 +6,28 @@ project(
   LANGUAGES C)
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+set(CLOX_SOURCES_RELATIVE
+    src/native/native.c
+    src/array.c
+    src/chunk.c
+    src/clox.c
+    src/compiler.c
+    src/debug.c
+    src/memory.c
+    src/object.c
+    src/scanner.c
+    src/table.c
+    src/value.c
+    src/vm.c)
+set(CLOX_SOURCES)
 
-string(TOLOWER ${CMAKE_BUILD_TYPE} build_type_lower)
-if(build_type_lower STREQUAL debug)
-  add_compile_definitions(DEBUG_PRINT_CODE)
-  add_compile_definitions(DEBUG_TRACE_EXECUTION)
-endif()
+foreach(file IN LISTS CLOX_SOURCES_RELATIVE)
+  list(APPEND CLOX_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/${file})
+endforeach()
+
+set(CLOX_LINKS m)
+set(CLOX_PUBLIC_HEADERS ${PROJECT_SOURCE_DIR}/include/)
+set(CLOX_PRIVATE_HEADERS ${PROJECT_SOURCE_DIR}/private/)
 
 add_subdirectory(src)
+add_subdirectory(tests)

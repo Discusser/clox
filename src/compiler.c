@@ -43,7 +43,7 @@ typedef struct {
 
 DEFINE_LOX_ARRAY(lox_local, local_array);
 
-void init_compiler(lox_compiler *curr);
+void init_compiler(lox_compiler *curr, lox_function_type function_type);
 
 static void consume();
 static void consume_expected(lox_token_type type, const char *message);
@@ -65,8 +65,9 @@ static void emit_bytes2(uint8_t byte1, uint8_t byte2);
 static void emit_short(uint16_t sh);
 static uint16_t emit_constant(lox_value value);
 static void emit_return();
-static void end_compiler();
+static lox_object_function *end_compiler();
 
+static void mark_initialized();
 static uint16_t parse_variable(const char *error_message);
 static uint16_t identifier_constant(lox_token *name, bool *is_cached);
 static void define_variable(uint16_t index);
@@ -86,6 +87,8 @@ static lox_parse_rule *get_parse_rule(lox_token_type type);
 static void parse_precedence(lox_precedence precedence);
 static void declaration();
 static void variable_declaration();
+static void function_declaration();
+static void function(lox_function_type type);
 static void statement();
 static void break_statement();
 static void continue_statement();
@@ -97,6 +100,7 @@ static void while_statement();
 static void if_statement();
 static void expression_statement();
 static void print_statement();
+static void return_statement();
 static void block();
 static void variable(bool can_assign);
 static void named_variable(lox_token name, bool can_assign);
@@ -109,6 +113,8 @@ static void literal(bool can_assign);
 static void string(bool can_assign);
 static void compile_and(bool can_assign);
 static void compile_or(bool can_assign);
+static void call(bool can_assign);
+static uint8_t argument_list();
 
 extern lox_vm vm;
 
@@ -118,7 +124,7 @@ lox_chunk *compiling_chunk;
 const char *compiling_source;
 
 lox_parse_rule rules[] = {
-    [TOKEN_LEFT_PAREN] = {grouping, NULL, PREC_NONE},
+    [TOKEN_LEFT_PAREN] = {grouping, call, PREC_CALL},
     [TOKEN_RIGHT_PAREN] = {NULL, NULL, PREC_NONE},
     [TOKEN_LEFT_BRACE] = {NULL, NULL, PREC_NONE},
     [TOKEN_RIGHT_BRACE] = {NULL, NULL, PREC_NONE},
@@ -142,7 +148,7 @@ lox_parse_rule rules[] = {
     [TOKEN_IDENTIFIER] = {variable, NULL, PREC_NONE},
     [TOKEN_STRING] = {string, NULL, PREC_NONE},
     [TOKEN_NUMBER] = {number, NULL, PREC_NONE},
-    [TOKEN_AND] = {NULL, compile_and, PREC_NONE},
+    [TOKEN_AND] = {NULL, compile_and, PREC_AND},
     [TOKEN_CLASS] = {NULL, NULL, PREC_NONE},
     [TOKEN_ELSE] = {NULL, NULL, PREC_NONE},
     [TOKEN_FALSE] = {literal, NULL, PREC_NONE},
@@ -150,7 +156,7 @@ lox_parse_rule rules[] = {
     [TOKEN_FUN] = {NULL, NULL, PREC_NONE},
     [TOKEN_IF] = {NULL, NULL, PREC_NONE},
     [TOKEN_NIL] = {literal, NULL, PREC_NONE},
-    [TOKEN_OR] = {NULL, NULL, PREC_NONE},
+    [TOKEN_OR] = {NULL, compile_or, PREC_OR},
     [TOKEN_PRINT] = {NULL, NULL, PREC_NONE},
     [TOKEN_RETURN] = {NULL, NULL, PREC_NONE},
     [TOKEN_SUPER] = {NULL, NULL, PREC_NONE},
@@ -168,15 +174,17 @@ lox_parse_rule rules[] = {
     [TOKEN_EOF] = {NULL, NULL, PREC_NONE},
 };
 
-bool lox_compiler_compile(const char *source, lox_chunk *chunk) {
+lox_object_function *lox_compiler_compile(const char *source) {
   lox_compiler curr;
-  init_compiler(&curr);
+  init_compiler(&curr, TYPE_SCRIPT);
   init_scanner(source);
-  compiling_chunk = chunk;
   compiling_source = source;
 
   parser.had_error = false;
   parser.panic_mode = false;
+
+  if (compiler == NULL)
+    return NULL;
 
   consume();
   while (!match(TOKEN_EOF)) {
@@ -184,20 +192,32 @@ bool lox_compiler_compile(const char *source, lox_chunk *chunk) {
   }
   consume_expected(TOKEN_EOF, "Expected end of expression.");
 
-  end_compiler();
+  lox_object_function *fun = end_compiler();
 
-  return !parser.had_error;
+  return parser.had_error ? NULL : fun;
 }
 
-void init_compiler(lox_compiler *curr) {
+void init_compiler(lox_compiler *curr, lox_function_type function_type) {
+  curr->enclosing = compiler;
   compiler = curr;
+  compiler->function = NULL;
+  compiler->function_type = function_type;
   lox_local_array_initialize(&compiler->locals);
   lox_hash_table_init(&compiler->global_constants);
   lox_int_array_initialize(&compiler->breaks);
   compiler->continue_jump_to = -1;
   compiler->scope_depth = 0;
-  compiler->in_breakable = false;
-  compiler->in_continueable = false;
+  compiler->continue_depth = 0;
+  compiler->break_depth = 0;
+  compiler->function = lox_object_function_new();
+
+  lox_local local;
+  local.depth = 0;
+  local.name.start = 0;
+  local.name.length = 0;
+  local.name.line = -1;
+  local.name.type = 0;
+  lox_local_array_push(&compiler->locals, local);
 }
 
 static void consume() {
@@ -291,7 +311,7 @@ static int get_token_column(lox_token token) {
   return col;
 }
 
-static lox_chunk *current_chunk() { return compiling_chunk; }
+static lox_chunk *current_chunk() { return compiler->function->chunk; }
 
 static void patch_jump(int location) {
   int jump = current_chunk()->code.size - location - 2;
@@ -348,18 +368,35 @@ static uint16_t emit_constant(lox_value value) {
   return constant;
 }
 
-static void emit_return() { emit_byte(OP_RETURN); }
+static void emit_return() {
+  emit_byte(OP_NIL);
+  emit_byte(OP_RETURN);
+}
 
-static void end_compiler() {
+static lox_object_function *end_compiler() {
   lox_local_array_free(&compiler->locals);
   lox_hash_table_free(&compiler->global_constants);
   lox_int_array_free(&compiler->breaks);
   emit_return();
+  lox_object_function *function = compiler->function;
 #ifdef DEBUG_PRINT_CODE
   if (!parser.had_error) {
-    lox_disassemble_chunk(current_chunk(), "code");
+    lox_disassemble_chunk(current_chunk(), function->name == NULL
+                                               ? "<script>"
+                                               : function->name->chars);
   }
 #endif
+  compiler = compiler->enclosing;
+  return function;
+}
+
+static void mark_initialized() {
+  if (compiler->scope_depth == 0)
+    return;
+  // Now that we've parsed the variable's initializer, we can update the depth
+  // to mark it as initialized.
+  compiler->locals.values[compiler->locals.size - 1].depth =
+      compiler->scope_depth;
 }
 
 static uint16_t parse_variable(const char *error_message) {
@@ -418,10 +455,7 @@ static uint16_t identifier_constant(lox_token *name, bool *is_cached) {
 static void define_variable(uint16_t index) {
   // If this variable is not global, don't emit any OP_DEFINE_GLOBAL opcodes.
   if (compiler->scope_depth > 0) {
-    // Now that we've parsed the variable's initializer, we can update the depth
-    // to mark it as initialized.
-    compiler->locals.values[compiler->locals.size - 1].depth =
-        compiler->scope_depth;
+    mark_initialized();
     return;
   }
 
@@ -527,26 +561,30 @@ static void begin_scope() { compiler->scope_depth++; }
 static void end_scope() {
   compiler->scope_depth--;
 
+  uint16_t pops = 0;
   while (compiler->locals.size > 0 &&
          compiler->locals.values[compiler->locals.size - 1].depth >
              compiler->scope_depth) {
-    // PERF: We can optimize this using a OP_POPN opcode, which takes 1
-    // argument (uint8_t), the number of successive pops.
-    emit_byte(OP_POP);
-    lox_local_array_pop(&compiler->locals);
+    pops++;
+    compiler->locals.size--;
   }
+
+  // PERF: We can optimize this using a OP_POPN opcode, which takes 1
+  // argument (uint16_t), the number of successive pops.
+  emit_byte(OP_POPN);
+  emit_short(pops);
 }
 
 static void emit_break() {
   lox_int_array_push(&compiler->breaks, emit_jump(OP_JMP));
-  if (!compiler->in_breakable) {
+  if (compiler->break_depth == 0) {
     error("Cannot have 'break' statement outside of loop or switch statement.");
   }
 }
 
 static void emit_continue() {
   emit_jump_back(compiler->continue_jump_to);
-  if (!compiler->in_continueable || compiler->continue_jump_to == -1) {
+  if (compiler->continue_depth == 0 || compiler->continue_jump_to == -1) {
     error("Cannot have 'continue' statement outside of loop.");
   }
 }
@@ -587,6 +625,8 @@ static void parse_precedence(lox_precedence precedence) {
 static void declaration() {
   if (match(TOKEN_VAR) || match(TOKEN_CONST)) {
     variable_declaration();
+  } else if (match(TOKEN_FUN)) {
+    function_declaration();
   } else {
     statement();
   }
@@ -610,9 +650,48 @@ static void variable_declaration() {
   define_variable(global);
 }
 
+static void function_declaration() {
+  uint16_t global = parse_variable("Expected function name.");
+  // We mark the function as initialized immediately after parsing the name to
+  // allow recursive calls to itself.
+  mark_initialized();
+  function(TYPE_FUNCTION);
+  define_variable(global);
+}
+
+static void function(lox_function_type type) {
+  lox_compiler new_compiler;
+  init_compiler(&new_compiler, type);
+  compiler->function->name =
+      lox_object_string_new_copy(parser.previous.start, parser.previous.length);
+
+  begin_scope();
+  consume_expected(TOKEN_LEFT_PAREN, "Expected '(' after function name.");
+  if (!check(TOKEN_RIGHT_PAREN)) {
+    do {
+      uint16_t var = parse_variable("Expected parameter name.");
+      define_variable(var);
+
+      compiler->function->arity++;
+      if (compiler->function->arity > UINT8_MAX) {
+        error("Cannot have more than 255 parameters for function.");
+      }
+    } while (match(TOKEN_COMMA));
+  }
+  consume_expected(TOKEN_RIGHT_PAREN, "Expected ')' after parameters.");
+  consume_expected(TOKEN_LEFT_BRACE, "Expected '{' before function body.");
+  block();
+  end_scope();
+
+  lox_object_function *fun = end_compiler();
+  emit_constant(lox_value_from_object((lox_object *)fun));
+}
+
 static void statement() {
   if (match(TOKEN_PRINT)) {
     print_statement();
+  } else if (match(TOKEN_RETURN)) {
+    return_statement();
   } else if (match(TOKEN_BREAK)) {
     break_statement();
   } else if (match(TOKEN_CONTINUE)) {
@@ -645,8 +724,7 @@ static void continue_statement() {
 }
 
 static void switch_statement() {
-  bool prevb = compiler->in_breakable;
-  compiler->in_breakable = true;
+  compiler->break_depth++;
 
   consume_expected(TOKEN_LEFT_PAREN, "Expected '(' after switch.");
   expression();
@@ -681,7 +759,7 @@ static void switch_statement() {
   emit_byte(OP_POP);
   consume_expected(TOKEN_RIGHT_BRACE, "Expected '}' after switch cases.");
 
-  compiler->in_breakable = prevb;
+  compiler->break_depth--;
 }
 
 static void switch_case() {
@@ -711,11 +789,9 @@ static void default_case() {
 }
 
 static void for_statement() {
-  bool prevb = compiler->in_breakable;
-  bool prevc = compiler->in_continueable;
-  int prevjmp = compiler->continue_jump_to;
-  compiler->in_breakable = true;
-  compiler->in_continueable = true;
+  int continue_jump_to = compiler->continue_jump_to;
+  compiler->break_depth++;
+  compiler->continue_depth++;
 
   begin_scope();
   consume_expected(TOKEN_LEFT_PAREN, "Expected '(' after for.");
@@ -762,17 +838,15 @@ static void for_statement() {
   patch_breaks();
   end_scope();
 
-  compiler->in_breakable = prevb;
-  compiler->in_continueable = prevc;
-  compiler->continue_jump_to = prevjmp;
+  compiler->break_depth--;
+  compiler->continue_depth--;
+  compiler->continue_jump_to = continue_jump_to;
 }
 
 static void while_statement() {
-  bool prevb = compiler->in_breakable;
-  bool prevc = compiler->in_continueable;
-  int prevjmp = compiler->continue_jump_to;
-  compiler->in_breakable = true;
-  compiler->in_continueable = true;
+  int continue_jump_to = compiler->continue_jump_to;
+  compiler->break_depth++;
+  compiler->continue_depth++;
 
   consume_expected(TOKEN_LEFT_PAREN, "Expected '(' after while");
 
@@ -792,9 +866,9 @@ static void while_statement() {
   patch_jump(end_jump);
   emit_byte(OP_POP);
 
-  compiler->in_breakable = prevb;
-  compiler->in_continueable = prevc;
-  compiler->continue_jump_to = prevjmp;
+  compiler->break_depth--;
+  compiler->continue_depth--;
+  compiler->continue_jump_to = continue_jump_to;
 }
 
 static void if_statement() {
@@ -825,6 +899,20 @@ static void print_statement() {
   expression();
   consume_expected(TOKEN_SEMICOLON, "Expected ';' after expression");
   emit_byte(OP_PRINT);
+}
+
+static void return_statement() {
+  if (compiler->function_type == TYPE_SCRIPT) {
+    error("Can't return outside of a function.");
+  }
+
+  if (match(TOKEN_SEMICOLON)) {
+    emit_return();
+  } else {
+    expression();
+    consume_expected(TOKEN_SEMICOLON, "Expected ';' after expression");
+    emit_byte(OP_RETURN);
+  }
 }
 
 static void block() {
@@ -898,6 +986,7 @@ static void unary(bool can_assign) {
   switch (operator_type) {
   case TOKEN_MINUS:
     emit_byte(OP_NEGATE);
+    break;
   case TOKEN_BANG:
     emit_byte(OP_NOT);
     break;
@@ -996,4 +1085,25 @@ static void compile_or(bool can_assign) {
   emit_byte(OP_POP);
   parse_precedence(PREC_OR);
   patch_jump(jump);
+}
+
+static void call(bool can_assign) {
+  uint8_t arg_count = argument_list();
+  emit_bytes2(OP_CALL, arg_count);
+}
+
+static uint8_t argument_list() {
+  int arg_count = 0;
+
+  if (!check(TOKEN_RIGHT_PAREN)) {
+    do {
+      expression();
+      arg_count++;
+      if (arg_count > 255) {
+        printf("Cannot have more than 255 arguments in function call.");
+      }
+    } while (match(TOKEN_COMMA));
+  }
+  consume_expected(TOKEN_RIGHT_PAREN, "Expected ')' after function arguments.");
+  return arg_count;
 }

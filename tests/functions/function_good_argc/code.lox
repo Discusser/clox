@@ -1,0 +1,7 @@
+fun a(i, j, k) {
+  print i;
+  print j;
+  print k;
+}
+
+a(3, 4, 5);

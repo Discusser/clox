@@ -1,5 +1,6 @@
 import glob
 import os
+import pathlib
 import re
 from subprocess import PIPE
 import subprocess
@@ -14,6 +15,7 @@ YELLOW = "\033[0;33m"
 BLUE = "\033[0;34m"
 CYAN = "\033[0;36m"
 WHITE = "\033[0;37m"
+FILE_PATH = os.path.realpath(__file__)
 info_color = BLUE
 
 
@@ -46,7 +48,7 @@ class Test(NamedTuple):
 
 
 def make_test(dir: str, files: list[str]) -> Test | None:
-    relative_dir = os.path.relpath(dir, os.path.dirname(os.path.dirname(__file__)))
+    relative_dir = os.path.relpath(dir, os.path.dirname(os.path.dirname(FILE_PATH)))
 
     input = None
     output = None
@@ -87,7 +89,7 @@ def make_test(dir: str, files: list[str]) -> Test | None:
 
 
 def find_tests() -> tuple[dict[str, list[Test]], int]:
-    dirname = os.path.dirname(__file__)
+    dirname = os.path.dirname(FILE_PATH)
     tests: dict[str, list[Test]] = {}
     skipped = 0
     for subdir, dirs, files in os.walk(dirname):
@@ -120,14 +122,18 @@ def run_test(clox_executable: str, test: Test) -> tuple[bool, str, str]:
     stdout, stderr = proc.communicate(test.input, timeout=1)
     result = False
     result = stdout == test.output if test.output is not None else len(stdout) == 0
-    result = stderr == test.error if test.error is not None else len(stderr) == 0
+    if result:
+        result = stderr == test.error if test.error is not None else len(stderr) == 0
 
     return result, stdout, stderr
 
 
 def search_clox(glob_pattern: str) -> str | None:
-    print(f"{info2(f'Searching in {glob_pattern}. ')}", end="")
-    matches = glob.glob(glob_pattern, recursive=True)
+    # Make glob pattern case insensitive with a little hack
+    chars: list[str] = []
+    for char in glob_pattern:
+        chars.append(f"[{char.lower()}{char.upper()}]" if char.isalpha() else char)
+    matches = glob.glob("".join(chars), recursive=True)
     if len(matches) == 1:
         print(f"{success(f'Found executable at {matches[0]}')}")
         return matches[0]
@@ -140,15 +146,23 @@ def search_clox(glob_pattern: str) -> str | None:
 
 
 def try_get_clox_executable_path() -> str:
+    executable_name = "clox-test"
     clox_executable = None
-    glob_patterns = ["./**/clox", "../build/**/clox", "../**/clox"]
+    glob_patterns = [
+        f"./**/{executable_name}",
+        f"../build/**/{executable_name}",
+        f"../**/{executable_name}",
+    ]
     if len(argv) == 2:
         if os.path.isfile(argv[1]):
             clox_executable = argv[1]
             return clox_executable
         else:
-            for i, pattern in enumerate(glob_patterns):
-                glob_patterns[i] = pattern.replace("**", f"**/{argv[1]}/**")
+            new_patterns: list[str] = []
+            for pattern in glob_patterns:
+                new_patterns.append(pattern.replace("**", f"**/{argv[1]}/**"))
+            new_patterns.extend(glob_patterns)
+            glob_patterns = new_patterns
             print(
                 f"{info2(f"Looking for clox executable that matches pattern '{argv[1]}'")}"
             )
@@ -156,6 +170,7 @@ def try_get_clox_executable_path() -> str:
         print(f"{info2('clox executable path not specified')}")
 
     for pattern in glob_patterns:
+        print(f"{info2(f'Searching in {pattern}. ')}", end="")
         res = search_clox(pattern)
         if res is not None:
             clox_executable = res
@@ -244,7 +259,7 @@ def run_tests(tests: dict[str, list[Test]], skipped: int, clox_executable: str):
 def main():
     if len(argv) > 2:
         print(
-            f"Usage: {os.path.relpath(__file__, os.getcwd())} [clox_executable_path | pattern]"
+            f"Usage: {os.path.relpath(FILE_PATH, os.getcwd())} [clox_executable_path | pattern]"
         )
         exit(1)
 

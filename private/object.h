@@ -4,11 +4,13 @@
 #include <stddef.h>
 #include <stdint.h>
 
-typedef enum { OBJ_STRING } lox_object_type;
+typedef enum { OBJ_STRING, OBJ_FUNCTION, OBJ_NATIVE } lox_object_type;
 
 // Forward reference lox_object so we can have it contain a pointer to another
 // lox_object struct without any issues.
 typedef struct lox_object lox_object;
+typedef struct lox_chunk lox_chunk;
+typedef struct lox_value lox_value;
 
 // Base object struct. Every object in lox, that is every value that isn't a
 // literal (number, boolean, nil), is represented by a child of lox_object.
@@ -29,6 +31,23 @@ typedef struct {
   // string itself is already contained in the source code.
   bool is_constant;
 } lox_object_string;
+
+// Function object used to represent lox functions
+typedef struct {
+  lox_object object;
+  lox_chunk *chunk;
+  lox_object_string *name;
+  int arity;
+} lox_object_function;
+
+// Native function object
+typedef lox_value (*lox_native_function)(int arg_count, lox_value *args);
+typedef struct {
+  lox_object object;
+  const char *name;
+  lox_native_function function;
+  int arity;
+} lox_object_native;
 
 // Helper function for printing a lox_object to standard output.
 void lox_print_object(lox_object *obj);
@@ -70,3 +89,15 @@ char *lox_object_string_get_chars(lox_object_string *obj);
 // responsible for freeing it. If it's not, the object is responsible for
 // freeing the string.
 bool lox_object_string_is_constant(lox_object_string *obj);
+
+// Creates a new, empty, lox_object_function and returns the allocated memory.
+lox_object_function *lox_object_function_new();
+// Frees a lox_object_function
+void lox_object_function_free(lox_object_function *obj);
+// Prints a function to standard output
+void lox_object_function_print(lox_object_function *obj);
+
+lox_object_native *lox_object_native_new(const char *name,
+                                         lox_native_function function,
+                                         int arity);
+void lox_object_native_free(lox_object_native *obj);

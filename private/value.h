@@ -20,7 +20,7 @@ typedef enum {
 // Every value in lox is represented by a lox_value. A lox_value can store a
 // primitive type (number, boolean, nil), but also a lox_object, pointed to by
 // lox_value.as.object.
-typedef struct {
+typedef struct lox_value {
   lox_value_type type;
   union {
     bool boolean;
@@ -47,3 +47,5 @@ uint32_t lox_value_hash_number(double number);
 // Helper functions to check if a lox_value is a specific child of lox_object
 bool lox_value_is_object(lox_value value);
 bool lox_value_is_string(lox_value value);
+bool lox_value_is_function(lox_value value);
+bool lox_value_is_native(lox_value value);

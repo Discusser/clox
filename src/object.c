@@ -1,4 +1,5 @@
 #include "object.h"
+#include "chunk.h"
 #include "memory.h"
 #include "value.h"
 #include "vm.h"
@@ -16,7 +17,15 @@ void lox_print_object(lox_object *obj) {
   case OBJ_STRING: {
     lox_object_string *str = ((lox_object_string *)obj);
     printf("%.*s", str->length, str->chars);
+    break;
   }
+  case OBJ_FUNCTION: {
+    lox_object_function_print((lox_object_function *)obj);
+    break;
+  }
+  case OBJ_NATIVE:
+    printf("<native>");
+    break;
   }
 }
 
@@ -36,6 +45,12 @@ void lox_object_free(lox_object *obj) {
   switch (obj->type) {
   case OBJ_STRING:
     lox_object_string_free((lox_object_string *)obj);
+    break;
+  case OBJ_FUNCTION:
+    lox_object_function_free((lox_object_function *)obj);
+    break;
+  case OBJ_NATIVE:
+    lox_object_native_free((lox_object_native *)obj);
     break;
   }
 }
@@ -125,4 +140,44 @@ char *lox_object_string_get_chars(lox_object_string *obj) { return obj->chars; }
 
 bool lox_object_string_is_constant(lox_object_string *obj) {
   return obj->is_constant;
+}
+
+lox_object_function *lox_object_function_new() {
+  lox_object_function *obj = OBJ_NEW(lox_object_function, OBJ_FUNCTION);
+  obj->arity = 0;
+  obj->chunk = ALLOC_TYPE(lox_chunk);
+  lox_chunk_initialize(obj->chunk);
+  obj->name = NULL;
+  return obj;
+}
+
+void lox_object_function_free(lox_object_function *obj) {
+  lox_chunk_free(obj->chunk);
+  FREE(lox_chunk, obj->chunk);
+  FREE(lox_object_function, obj);
+}
+
+void lox_object_function_print(lox_object_function *obj) {
+  if (obj->name == NULL) {
+    printf("<script>");
+    return;
+  }
+  lox_object_function *fun = ((lox_object_function *)obj);
+  printf("<fn ");
+  lox_print_object((lox_object *)fun->name);
+  printf(">");
+}
+
+lox_object_native *lox_object_native_new(const char *name,
+                                         lox_native_function function,
+                                         int arity) {
+  lox_object_native *obj = OBJ_NEW(lox_object_native, OBJ_NATIVE);
+  obj->name = name;
+  obj->function = function;
+  obj->arity = arity;
+  return obj;
+}
+
+void lox_object_native_free(lox_object_native *obj) {
+  FREE(lox_native_function, obj);
 }
