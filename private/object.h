@@ -1,23 +1,32 @@
 #pragma once
 
+#include "value.h"
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 
-typedef enum { OBJ_STRING, OBJ_FUNCTION, OBJ_NATIVE } lox_object_type;
+typedef enum {
+  OBJ_STRING,
+  OBJ_FUNCTION,
+  OBJ_NATIVE,
+  OBJ_CLOSURE,
+  OBJ_UPVALUE
+} lox_object_type;
 
 // Forward reference lox_object so we can have it contain a pointer to another
 // lox_object struct without any issues.
 typedef struct lox_object lox_object;
 typedef struct lox_chunk lox_chunk;
 typedef struct lox_value lox_value;
+typedef struct lox_object_upvalue lox_object_upvalue;
+typedef struct lox_value lox_value;
 
 // Base object struct. Every object in lox, that is every value that isn't a
 // literal (number, boolean, nil), is represented by a child of lox_object.
-struct lox_object {
+typedef struct lox_object {
   lox_object_type type;
   lox_object *next;
-};
+} lox_object;
 
 // String object used to represent lox strings.
 typedef struct {
@@ -37,8 +46,23 @@ typedef struct {
   lox_object object;
   lox_chunk *chunk;
   lox_object_string *name;
+  int upvalue_count;
   int arity;
 } lox_object_function;
+
+typedef struct {
+  lox_object object;
+  lox_object_function *function;
+  lox_object_upvalue **upvalues;
+  int upvalue_count;
+} lox_object_closure;
+
+typedef struct lox_object_upvalue {
+  lox_object object;
+  lox_value closed;
+  lox_value *location;
+  lox_object_upvalue *next;
+} lox_object_upvalue;
 
 // Native function object
 typedef lox_value (*lox_native_function)(int arg_count, lox_value *args);
@@ -101,3 +125,9 @@ lox_object_native *lox_object_native_new(const char *name,
                                          lox_native_function function,
                                          int arity);
 void lox_object_native_free(lox_object_native *obj);
+
+lox_object_closure *lox_object_closure_new(lox_object_function *function);
+void lox_object_closure_free(lox_object_closure *obj);
+
+lox_object_upvalue *lox_object_upvalue_new(lox_value *slot);
+void lox_object_upvalue_free(lox_object_upvalue *obj);

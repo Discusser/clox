@@ -1,5 +1,6 @@
 #include "chunk.h"
 #include "memory.h"
+#include <stdio.h>
 #include <string.h>
 
 void lox_chunk_initialize(lox_chunk *chunk) {
@@ -34,7 +35,8 @@ void lox_chunk_write_array(lox_chunk *chunk, uint8_t *bytes, int size,
       lox_int_array_grow_to(&chunk->lines, line, true);
       chunk->lines.values[line - 1] = 0;
     }
-  } else if (chunk->lines.size >= chunk->lines.capacity) {
+  } else if (chunk->lines.size >= chunk->lines.capacity ||
+             line >= chunk->lines.capacity) {
     lox_int_array_grow_to(&chunk->lines, line, true);
     chunk->lines.values[line - 1] = 0;
   }

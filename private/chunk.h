@@ -84,6 +84,9 @@ typedef enum {
   // Sets the value of the local variable with the given index to the value at
   // the top of the stack. Parameters: index (1 byte)
   OP_SET_LOCAL,
+  OP_GET_UPVALUE,
+  OP_SET_UPVALUE,
+  OP_CLOSE_UPVALUE,
   // Offsets the instruction pointer by the given amount, essentially performing
   // a jump, if the value on top of the stack is truthy. Parameters: offset (2
   // bytes)
@@ -108,6 +111,7 @@ typedef enum {
   // stack. Instead, the called function acts on the values already present on
   // the stack. Parameters: arg_count (1 byte)
   OP_CALL,
+  OP_CLOSURE,
   // Pops the value on top of the stack, pops the current frame, and pushes the
   // initial popped value (the return value) onto the stack. This pops the
   // current frame and goes to the previous frame. Parameters: none

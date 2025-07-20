@@ -20,7 +20,9 @@ static void push(lox_value value);
 static lox_value pop();
 static lox_value *peek(int n);
 static bool call_value(lox_value value, int arg_count);
-static bool call_function(lox_object_function *fun, int arg_count);
+static bool call_closure(lox_object_closure *closure, int arg_count);
+static lox_object_upvalue *capture_upvalue(lox_value *local);
+static void close_upvalues(lox_value *last);
 
 lox_vm vm;
 
@@ -35,6 +37,7 @@ void init_vm() {
   lox_hash_table_init(&vm.local_names);
 #endif
   vm.objects = NULL;
+  vm.open_upvalues = NULL;
   reset_stack();
 
   define_natives(&vm);
@@ -83,8 +86,8 @@ static inline lox_value peekv(int n) {
 static bool call_value(lox_value value, int arg_count) {
   if (lox_value_is_object(value)) {
     switch (((lox_object *)value.as.object)->type) {
-    case OBJ_FUNCTION: {
-      return call_function((lox_object_function *)value.as.object, arg_count);
+    case OBJ_CLOSURE: {
+      return call_closure((lox_object_closure *)value.as.object, arg_count);
     }
     case OBJ_NATIVE: {
       lox_object_native *native = ((lox_object_native *)value.as.object);
@@ -108,7 +111,8 @@ static bool call_value(lox_value value, int arg_count) {
   return false;
 }
 
-static bool call_function(lox_object_function *fun, int arg_count) {
+static bool call_closure(lox_object_closure *closure, int arg_count) {
+  lox_object_function *fun = closure->function;
   if (arg_count != fun->arity) {
     runtime_error("Function %s expected %i arguments, found %i instead.",
                   fun->name->chars, fun->arity, arg_count);
@@ -122,10 +126,40 @@ static bool call_function(lox_object_function *fun, int arg_count) {
   }
 
   lox_call_frame *frame = &vm.frames[vm.frame_count++];
-  frame->function = fun;
+  frame->closure = closure;
   frame->ip = fun->chunk->code.values;
   frame->slots_offset = vm.stack.size - arg_count - 1;
   return true;
+}
+
+static lox_object_upvalue *capture_upvalue(lox_value *local) {
+  lox_object_upvalue *previous_upvalue = NULL;
+  lox_object_upvalue *val = vm.open_upvalues;
+  while (val != NULL && val->location > local) {
+    previous_upvalue = val;
+    val = val->next;
+  }
+
+  if (val != NULL && val->location == local)
+    return val;
+
+  lox_object_upvalue *upvalue = lox_object_upvalue_new(local);
+  upvalue->next = val;
+  if (previous_upvalue == NULL) {
+    vm.open_upvalues = upvalue;
+  } else {
+    previous_upvalue->next = upvalue;
+  }
+  return upvalue;
+}
+
+static void close_upvalues(lox_value *last) {
+  while (vm.open_upvalues != NULL && vm.open_upvalues->location >= last) {
+    lox_object_upvalue *upvalue = vm.open_upvalues;
+    upvalue->closed = *upvalue->location;
+    upvalue->location = &upvalue->closed;
+    vm.open_upvalues = upvalue->next;
+  }
 }
 
 bool lox_is_falsey(lox_value value) {
@@ -157,7 +191,10 @@ interpret_result interpret(const char *source) {
     return INTERPRET_COMPILE_ERROR;
 
   push(lox_value_from_object((lox_object *)function));
-  call_function(function, 0);
+  lox_object_closure *closure = lox_object_closure_new(function);
+  pop();
+  push(lox_value_from_object((lox_object *)closure));
+  call_closure(closure, 0);
 
   return run();
 }
@@ -171,9 +208,10 @@ interpret_result run() {
 
 #define READ_BYTE() (*ip++)
 #define READ_SHORT() (ip += 2, (uint16_t)(ip[-2] << 8 | ip[-1]))
-#define READ_CONST() (frame->function->chunk->constants.values[READ_BYTE()])
+#define READ_CONST()                                                           \
+  (frame->closure->function->chunk->constants.values[READ_BYTE()])
 #define READ_CONST_LONG()                                                      \
-  (frame->function->chunk->constants.values[READ_SHORT()])
+  (frame->closure->function->chunk->constants.values[READ_SHORT()])
 #define RUNTIME_ERROR(fmt)                                                     \
   do {                                                                         \
     frame->ip = ip;                                                            \
@@ -208,13 +246,15 @@ interpret_result run() {
       printf(" ]");
     }
     printf("\n");
-    lox_disassemble_instruction(frame->function->chunk,
-                                ip - frame->function->chunk->code.values);
+    lox_disassemble_instruction(
+        frame->closure->function->chunk,
+        ip - frame->closure->function->chunk->code.values);
 #endif
 
     uint8_t instruction;
     switch (instruction = READ_BYTE()) {
     case OP_RETURN: {
+      close_upvalues(vm.stack.values + frame->slots_offset);
       vm.frame_count--;
       // This indicates the end of the program
       if (vm.frame_count == 0) {
@@ -408,6 +448,24 @@ interpret_result run() {
       vm.stack.values[slot + frame->slots_offset] = *peek(0);
       break;
     }
+    case OP_GET_UPVALUE: {
+      uint8_t slot = READ_BYTE();
+      push(*frame->closure->upvalues[slot]->location);
+      break;
+    }
+    case OP_SET_UPVALUE: {
+      uint8_t slot = READ_BYTE();
+      // We don't want to change the pointer held by the current closure, since
+      // that will disallow sharing the upvalue between closures. Instead, we
+      // modify the value the pointer points to
+      *frame->closure->upvalues[slot]->location = peekv(0);
+      break;
+    }
+    case OP_CLOSE_UPVALUE: {
+      close_upvalues(vm.stack.values + vm.stack.size - 1);
+      vm.stack.size--;
+      break;
+    }
     case OP_JMP_TRUE: {
       uint16_t offset = READ_SHORT();
       if (!lox_is_falsey(peekv(0)))
@@ -446,6 +504,23 @@ interpret_result run() {
       ip = frame->ip;
       break;
     }
+    case OP_CLOSURE: {
+      lox_object_function *fun =
+          (lox_object_function *)(READ_CONST_LONG().as.object);
+      lox_object_closure *closure = lox_object_closure_new(fun);
+      for (int i = 0; i < closure->upvalue_count; i++) {
+        uint8_t is_local = READ_BYTE();
+        uint16_t index = READ_SHORT();
+        if (is_local) {
+          closure->upvalues[i] =
+              capture_upvalue(vm.stack.values + frame->slots_offset + index);
+        } else {
+          closure->upvalues[i] = frame->closure->upvalues[index];
+        }
+      }
+      push(lox_value_from_object((lox_object *)closure));
+      break;
+    }
     default:
       printf("Unknown instruction %i\n", instruction);
       return INTERPRET_RUNTIME_ERROR;
@@ -473,7 +548,7 @@ void runtime_error(const char *format, ...) {
   fprintf(stderr, "Stacktrace:\n");
   for (int i = vm.frame_count - 1; i >= 0; i--) {
     lox_call_frame *frame = &vm.frames[i];
-    lox_object_function *fun = frame->function;
+    lox_object_function *fun = frame->closure->function;
     size_t instruction = frame->ip - fun->chunk->code.values - 2;
     fprintf(stderr, "  line %d in ",
             lox_chunk_get_offset_line(fun->chunk, instruction) + 1);

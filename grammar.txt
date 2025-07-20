@@ -4,6 +4,21 @@
 # The semicolon at the end of a rule is there to indicate that the rule is over.
 #
 # There are a few special characters that allow defining rules with more ease:
+# '&' : and
+#   a → b & c ;
+#   # is equivalent to the intersection of rules b and c (used with ranges of characters)
+#   # consider
+#   b → "a" | "b" | "c" ;
+#   c → "a" | "c" | "e" ;
+#   # in this case, we have
+#   a → "a" | "c" ;
+# '!' : not
+#   a → !c ;
+#   # is equivalent to the range any_character, without the characters in c
+#   # consider
+#   c → "a" | "e" ;
+#   # in this case, knowing that "a" is \x61 and "e" is \x65, we have
+#   a → [ \x00-\x60 ] | [ \x62-\x64 ] | [ x66-\x7f ]
 # '|' : or
 #   a → b | c ;
 #   # is equivalent to
@@ -80,12 +95,14 @@ expression         → assignment ;
 
 grouping           → "(" expression ")"
 variable           → identifier ( "=" expression )?
-string             → '"' ( any_character & !( EOF | '"') )* '"'
+string             → '"' ( any_character & !( EOF | '"' ) )* '"'
 number             → digit* ( "." digit+ )?
 literal            → "false" | "true" | "nil"
+identifier         → identifier_char ( identifier_char | digit )*
 
 # Matches any character having an index between 0 and 127 (so that it can fit in a C char)
 any_character      → [ \x00-\x7f ]
+identifier_char    → [ a-z ] | [ A-Z ] | "_"
 digit              → [ "0"-"9" ]
 # GRAMMAR END -----------------------------------------------------------------
 

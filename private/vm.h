@@ -4,7 +4,7 @@
 #include "table.h"
 
 typedef struct {
-  lox_object_function *function;
+  lox_object_closure *closure;
   uint8_t *ip;
   int slots_offset;
 } lox_call_frame;
@@ -25,6 +25,7 @@ typedef struct {
   lox_hash_table local_names;
 #endif
   lox_object *objects;
+  lox_object_upvalue *open_upvalues;
 } lox_vm;
 
 typedef enum {

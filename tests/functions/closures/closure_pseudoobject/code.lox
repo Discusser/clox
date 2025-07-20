@@ -1,0 +1,24 @@
+fun Vec2(x, y) {
+  fun object(message) {
+    fun add(other) {
+      return Vec2(x + other("x"), y + other("y"));
+    }
+
+    if (message == "x") return x;
+    if (message == "y") return y;
+    if (message == "add") return add;
+    print "unknown message";
+  }
+
+  return object;
+}
+
+var a = Vec2(1, 2);
+var b = Vec2(3, 4);
+print a("x");
+print b("x");
+print a("y");
+print b("y");
+var c = a("add")(b);
+print c("x");
+print c("y");

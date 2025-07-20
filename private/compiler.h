@@ -14,7 +14,13 @@ typedef struct {
   // If true, it means that this variable was created using `const`, and thus
   // cannot be modified.
   bool is_constant;
+  bool is_captured;
 } lox_local;
+
+typedef struct {
+  uint16_t index;
+  bool is_local;
+} lox_up_value;
 
 typedef enum { TYPE_FUNCTION, TYPE_SCRIPT } lox_function_type;
 
@@ -23,6 +29,7 @@ DECLARE_LOX_ARRAY(lox_local, local_array);
 typedef struct lox_compiler lox_compiler;
 
 typedef struct lox_compiler {
+  lox_up_value upvalues[256];
   lox_compiler *enclosing;
   lox_object_function *function;
   lox_function_type function_type;
@@ -33,7 +40,7 @@ typedef struct lox_compiler {
   lox_hash_table global_constants;
   // Arrays of break jumps that we have to patch.
   lox_int_array breaks;
-  int continue_jump_to;
+  lox_int_array continues;
   int scope_depth;
   int continue_depth;
   int break_depth;

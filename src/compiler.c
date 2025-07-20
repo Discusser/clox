@@ -73,8 +73,10 @@ static uint16_t identifier_constant(lox_token *name, bool *is_cached);
 static void define_variable(uint16_t index);
 static void declare_variable(bool constant);
 static void add_local(lox_token name, bool constant);
+static int add_upvalue(lox_compiler *compiler, uint16_t index, bool is_local);
 static bool are_identifiers_equal(lox_token *a, lox_token *b);
 static int resolve_local(lox_compiler *compiler, lox_token *name);
+static int resolve_upvalue(lox_compiler *compiler, lox_token *name);
 
 static void begin_scope();
 static void end_scope();
@@ -82,6 +84,7 @@ static void end_scope();
 static void emit_break();
 static void emit_continue();
 static void patch_breaks();
+static void patch_continues();
 
 static lox_parse_rule *get_parse_rule(lox_token_type type);
 static void parse_precedence(lox_precedence precedence);
@@ -205,7 +208,7 @@ void init_compiler(lox_compiler *curr, lox_function_type function_type) {
   lox_local_array_initialize(&compiler->locals);
   lox_hash_table_init(&compiler->global_constants);
   lox_int_array_initialize(&compiler->breaks);
-  compiler->continue_jump_to = -1;
+  lox_int_array_initialize(&compiler->continues);
   compiler->scope_depth = 0;
   compiler->continue_depth = 0;
   compiler->break_depth = 0;
@@ -213,6 +216,8 @@ void init_compiler(lox_compiler *curr, lox_function_type function_type) {
 
   lox_local local;
   local.depth = 0;
+  local.is_captured = false;
+  local.is_constant = false;
   local.name.start = 0;
   local.name.length = 0;
   local.name.line = -1;
@@ -377,11 +382,12 @@ static lox_object_function *end_compiler() {
   lox_local_array_free(&compiler->locals);
   lox_hash_table_free(&compiler->global_constants);
   lox_int_array_free(&compiler->breaks);
+  lox_int_array_free(&compiler->continues);
   emit_return();
   lox_object_function *function = compiler->function;
 #ifdef DEBUG_PRINT_CODE
   if (!parser.had_error) {
-    lox_disassemble_chunk(current_chunk(), function->name == NULL
+    lox_disassemble_chunk(function->chunk, function->name == NULL
                                                ? "<script>"
                                                : function->name->chars);
   }
@@ -474,7 +480,7 @@ static void declare_variable(bool constant) {
 
   lox_token *name = &parser.previous;
 
-  for (int i = compiler->locals.size - 1; i >= 0; i--) {
+  for (int i = compiler->locals.size - 1; i >= 1; i--) {
     lox_local local = compiler->locals.values[i];
     if (local.depth != -1 && local.depth < compiler->scope_depth)
       break;
@@ -536,7 +542,32 @@ static void add_local(lox_token name, bool constant) {
       lox_value_from_object(
           (lox_object *)lox_object_string_new_copy(name.start, name.length)));
 #endif
-  lox_local_array_push(&compiler->locals, (lox_local){name, -1, constant});
+  lox_local local;
+  local.depth = -1;
+  local.name = name;
+  local.is_constant = constant;
+  local.is_captured = false;
+  lox_local_array_push(&compiler->locals, local);
+}
+
+static int add_upvalue(lox_compiler *compiler, uint16_t index, bool is_local) {
+  int count = compiler->function->upvalue_count;
+
+  for (int i = 0; i < count; i++) {
+    lox_up_value up_value = compiler->upvalues[i];
+    if (up_value.index == index && up_value.is_local == is_local) {
+      return i;
+    }
+  }
+
+  if (count == 256) {
+    error("Too many closure variables in function.");
+    return 0;
+  }
+
+  compiler->upvalues[count].is_local = is_local;
+  compiler->upvalues[count].index = index;
+  return compiler->function->upvalue_count++;
 }
 
 static bool are_identifiers_equal(lox_token *a, lox_token *b) {
@@ -556,23 +587,58 @@ static int resolve_local(lox_compiler *compiler, lox_token *name) {
   return -1;
 }
 
+static int resolve_upvalue(lox_compiler *compiler, lox_token *name) {
+  if (compiler->enclosing == NULL)
+    return -1;
+
+  int local = resolve_local(compiler->enclosing, name);
+  if (local != -1) {
+    compiler->enclosing->locals.values[local].is_captured = true;
+    return add_upvalue(compiler, local, true);
+  }
+
+  int upvalue = resolve_upvalue(compiler->enclosing, name);
+  if (upvalue != -1)
+    return add_upvalue(compiler, upvalue, false);
+
+  return -1;
+}
+
 static void begin_scope() { compiler->scope_depth++; }
 
 static void end_scope() {
   compiler->scope_depth--;
 
   uint16_t pops = 0;
+  bool was_previous_captured = false;
   while (compiler->locals.size > 0 &&
          compiler->locals.values[compiler->locals.size - 1].depth >
              compiler->scope_depth) {
-    pops++;
+    bool is_captured =
+        compiler->locals.values[compiler->locals.size - 1].is_captured;
+
+    if (is_captured) {
+      if (pops == 1) {
+        emit_byte(OP_POP);
+      } else if (pops > 1) {
+        emit_byte(OP_POPN);
+        emit_short(pops);
+      }
+      pops = 0;
+      emit_byte(OP_CLOSE_UPVALUE);
+    } else {
+      pops++;
+    }
+
     compiler->locals.size--;
   }
 
-  // PERF: We can optimize this using a OP_POPN opcode, which takes 1
-  // argument (uint16_t), the number of successive pops.
-  emit_byte(OP_POPN);
-  emit_short(pops);
+  if (pops == 1) {
+    emit_byte(OP_POP);
+  } else if (pops > 1) {
+    emit_byte(OP_POPN);
+    emit_short(pops);
+  }
 }
 
 static void emit_break() {
@@ -583,8 +649,8 @@ static void emit_break() {
 }
 
 static void emit_continue() {
-  emit_jump_back(compiler->continue_jump_to);
-  if (compiler->continue_depth == 0 || compiler->continue_jump_to == -1) {
+  lox_int_array_push(&compiler->continues, emit_jump(OP_JMP));
+  if (compiler->continue_depth == 0) {
     error("Cannot have 'continue' statement outside of loop.");
   }
 }
@@ -594,6 +660,13 @@ static void patch_breaks() {
     patch_jump(compiler->breaks.values[i]);
   }
   lox_int_array_clear(&compiler->breaks);
+}
+
+static void patch_continues() {
+  for (int i = 0; i < compiler->continues.size; i++) {
+    patch_jump(compiler->continues.values[i]);
+  }
+  lox_int_array_clear(&compiler->continues);
 }
 
 static lox_parse_rule *get_parse_rule(lox_token_type type) {
@@ -662,7 +735,7 @@ static void function_declaration() {
 static void function(lox_function_type type) {
   lox_compiler new_compiler;
   init_compiler(&new_compiler, type);
-  compiler->function->name =
+  new_compiler.function->name =
       lox_object_string_new_copy(parser.previous.start, parser.previous.length);
 
   begin_scope();
@@ -684,7 +757,13 @@ static void function(lox_function_type type) {
   end_scope();
 
   lox_object_function *fun = end_compiler();
-  emit_constant(lox_value_from_object((lox_object *)fun));
+  emit_byte(OP_CLOSURE);
+  emit_short(lox_chunk_add_constant(current_chunk(),
+                                    lox_value_from_object((lox_object *)fun)));
+  for (int i = 0; i < fun->upvalue_count; i++) {
+    emit_byte(new_compiler.upvalues[i].is_local ? 1 : 0);
+    emit_short(new_compiler.upvalues[i].index);
+  }
 }
 
 static void statement() {
@@ -755,6 +834,20 @@ static void switch_statement() {
     emit_jump_back(default_start);
   }
 
+  // Intercept any continues if they exist to pop any values off the stack.
+  if (compiler->continues.size > 0) {
+    int jump = emit_jump(OP_JMP);
+
+    // By default, we skip these instructions because we don't want to execute a
+    // continue even though we didn't actually run the part of the code with the
+    // continue statement.
+    patch_continues();
+    emit_byte(OP_POP);
+    emit_continue();
+
+    patch_jump(jump);
+  }
+
   patch_breaks();
   emit_byte(OP_POP);
   consume_expected(TOKEN_RIGHT_BRACE, "Expected '}' after switch cases.");
@@ -768,11 +861,11 @@ static void switch_case() {
   consume_expected(TOKEN_COLON, "Expected ':' after case label.");
   emit_byte(OP_EQ);
   int jump = emit_jump(OP_JMP_FALSE);
+  emit_byte(OP_POP);
   while (!check(TOKEN_CASE) && !check(TOKEN_DEFAULT) &&
          !check(TOKEN_RIGHT_BRACE)) {
     statement();
   }
-  emit_byte(OP_POP);
   emit_break();
   patch_jump(jump);
   emit_byte(OP_POP);
@@ -789,16 +882,22 @@ static void default_case() {
 }
 
 static void for_statement() {
-  int continue_jump_to = compiler->continue_jump_to;
   compiler->break_depth++;
   compiler->continue_depth++;
 
   begin_scope();
+
+  int loop_variable = -1;
+  lox_token loop_variable_name;
+  loop_variable_name.start = NULL;
+
   consume_expected(TOKEN_LEFT_PAREN, "Expected '(' after for.");
   // Initializer
   if (match(TOKEN_SEMICOLON)) {
   } else if (match(TOKEN_VAR)) {
+    loop_variable_name = parser.current;
     variable_declaration();
+    loop_variable = compiler->locals.size - 1;
   } else {
     expression_statement();
   }
@@ -826,8 +925,28 @@ static void for_statement() {
     patch_jump(increment_jump);
   }
 
-  compiler->continue_jump_to = loop_start;
+  int inner_variable = -1;
+  if (loop_variable != -1) {
+    begin_scope();
+    emit_bytes2(OP_GET_LOCAL, loop_variable);
+    add_local(loop_variable_name, false);
+    mark_initialized();
+    inner_variable = compiler->locals.size - 1;
+  }
+
   statement();
+
+  // A continue statement should first jump right before we close the hidden
+  // scope, and then the call to emit_jump_back will bring us back to the start
+  // of the loop
+  patch_continues();
+  if (loop_variable != -1) {
+    emit_bytes2(OP_GET_LOCAL, inner_variable);
+    emit_bytes2(OP_SET_LOCAL, loop_variable);
+    emit_byte(OP_POP);
+    end_scope();
+  }
+
   emit_jump_back(loop_start);
 
   if (exit_jump != -1) {
@@ -840,11 +959,9 @@ static void for_statement() {
 
   compiler->break_depth--;
   compiler->continue_depth--;
-  compiler->continue_jump_to = continue_jump_to;
 }
 
 static void while_statement() {
-  int continue_jump_to = compiler->continue_jump_to;
   compiler->break_depth++;
   compiler->continue_depth++;
 
@@ -857,18 +974,19 @@ static void while_statement() {
 
   consume_expected(TOKEN_RIGHT_PAREN, "Expected ')' after expression");
 
-  compiler->continue_jump_to = loop_start;
   int end_jump = emit_jump(OP_JMP_FALSE);
   emit_byte(OP_POP);
   statement();
+
+  patch_continues();
   emit_jump_back(loop_start);
 
+  patch_breaks();
   patch_jump(end_jump);
   emit_byte(OP_POP);
 
   compiler->break_depth--;
   compiler->continue_depth--;
-  compiler->continue_jump_to = continue_jump_to;
 }
 
 static void if_statement() {
@@ -932,9 +1050,20 @@ static void named_variable(lox_token name, bool can_assign) {
   bool is_local = false;
   int arg = resolve_local(compiler, &name);
   if (arg != -1) {
-    is_local = true;
+    get = OP_GET_LOCAL;
+    set = OP_SET_LOCAL;
+  } else if ((arg = resolve_upvalue(compiler, &name)) != -1) {
+    get = OP_GET_UPVALUE;
+    set = OP_SET_UPVALUE;
   } else {
     arg = identifier_constant(&name, NULL);
+    if (arg <= UINT8_MAX) {
+      get = OP_GET_GLOBAL;
+      set = OP_SET_GLOBAL;
+    } else {
+      get = OP_GET_GLOBAL_LONG;
+      set = OP_SET_GLOBAL_LONG;
+    }
   }
 
   bool is_const = false;
@@ -950,19 +1079,15 @@ static void named_variable(lox_token name, bool can_assign) {
     }
 
     expression();
-    if (arg <= UINT8_MAX) {
-      emit_bytes2(is_local ? OP_SET_LOCAL : OP_SET_GLOBAL, (uint8_t)arg);
-    } else {
-      emit_byte(OP_SET_GLOBAL_LONG);
-      emit_short(arg);
-    }
+    emit_byte(set);
   } else {
-    if (arg <= UINT8_MAX) {
-      emit_bytes2(is_local ? OP_GET_LOCAL : OP_GET_GLOBAL, (uint8_t)arg);
-    } else {
-      emit_byte(OP_GET_GLOBAL_LONG);
-      emit_short(arg);
-    }
+    emit_byte(get);
+  }
+
+  if (arg <= UINT8_MAX || (get != OP_GET_GLOBAL && set != OP_SET_GLOBAL)) {
+    emit_byte(arg);
+  } else {
+    emit_short(arg);
   }
 }
 
@@ -1100,7 +1225,7 @@ static uint8_t argument_list() {
       expression();
       arg_count++;
       if (arg_count > 255) {
-        printf("Cannot have more than 255 arguments in function call.");
+        error("Cannot have more than 255 arguments in function call.");
       }
     } while (match(TOKEN_COMMA));
   }

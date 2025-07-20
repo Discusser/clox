@@ -19,12 +19,17 @@ void lox_print_object(lox_object *obj) {
     printf("%.*s", str->length, str->chars);
     break;
   }
-  case OBJ_FUNCTION: {
+  case OBJ_FUNCTION:
     lox_object_function_print((lox_object_function *)obj);
     break;
-  }
   case OBJ_NATIVE:
     printf("<native>");
+    break;
+  case OBJ_CLOSURE:
+    lox_object_function_print(((lox_object_closure *)obj)->function);
+    break;
+  case OBJ_UPVALUE:
+    lox_print_value(*((lox_object_upvalue *)obj)->location);
     break;
   }
 }
@@ -51,6 +56,12 @@ void lox_object_free(lox_object *obj) {
     break;
   case OBJ_NATIVE:
     lox_object_native_free((lox_object_native *)obj);
+    break;
+  case OBJ_CLOSURE:
+    lox_object_closure_free((lox_object_closure *)obj);
+    break;
+  case OBJ_UPVALUE:
+    lox_object_upvalue_free((lox_object_upvalue *)obj);
     break;
   }
 }
@@ -144,10 +155,11 @@ bool lox_object_string_is_constant(lox_object_string *obj) {
 
 lox_object_function *lox_object_function_new() {
   lox_object_function *obj = OBJ_NEW(lox_object_function, OBJ_FUNCTION);
-  obj->arity = 0;
   obj->chunk = ALLOC_TYPE(lox_chunk);
   lox_chunk_initialize(obj->chunk);
   obj->name = NULL;
+  obj->arity = 0;
+  obj->upvalue_count = 0;
   return obj;
 }
 
@@ -180,4 +192,31 @@ lox_object_native *lox_object_native_new(const char *name,
 
 void lox_object_native_free(lox_object_native *obj) {
   FREE(lox_native_function, obj);
+}
+
+lox_object_closure *lox_object_closure_new(lox_object_function *function) {
+  lox_object_closure *obj = OBJ_NEW(lox_object_closure, OBJ_CLOSURE);
+  obj->function = function;
+  obj->upvalues = ALLOC_ARRAY(lox_object_upvalue *, function->upvalue_count);
+  obj->upvalue_count = function->upvalue_count;
+  memset(obj->upvalues, '\0',
+         function->upvalue_count * sizeof(lox_object_upvalue *));
+  return obj;
+}
+
+void lox_object_closure_free(lox_object_closure *obj) {
+  FREE_ARRAY(lox_object_upvalue *, obj->upvalues, obj->upvalue_count);
+  FREE(lox_object_closure, obj);
+}
+
+lox_object_upvalue *lox_object_upvalue_new(lox_value *slot) {
+  lox_object_upvalue *obj = OBJ_NEW(lox_object_upvalue, OBJ_UPVALUE);
+  obj->location = slot;
+  obj->next = NULL;
+  obj->closed = lox_value_from_nil();
+  return obj;
+}
+
+void lox_object_upvalue_free(lox_object_upvalue *obj) {
+  FREE(lox_object_upvalue, obj);
 }

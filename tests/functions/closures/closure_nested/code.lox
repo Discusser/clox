@@ -1,0 +1,26 @@
+fun outer() {
+  var x = 0;
+  fun mid() {
+    fun inner() {
+      print "inner";
+      x = x + 1;
+      print x;
+    }
+
+    print "mid";
+    x = x + 1;
+    print x;
+
+    return inner;
+  }
+
+  print "outer";
+  x = x + 1;
+  print x;
+
+  return mid;
+}
+
+var mid = outer();
+var inner = mid();
+inner();

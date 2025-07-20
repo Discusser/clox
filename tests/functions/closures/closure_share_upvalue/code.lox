@@ -1,0 +1,19 @@
+var get;
+var set;
+
+fun outer() {
+  var x = "unset";
+
+  fun _get() { return x; }
+  fun _set(val) { x = val; }
+
+  get = _get;
+  set = _set;
+}
+
+outer();
+print get();
+set(5);
+print get();
+set("set");
+print get();

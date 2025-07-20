@@ -1,9 +1,10 @@
 #pragma once
 
 #include "array.h"
-#include "object.h"
 #include <stddef.h>
 #include <stdbool.h>
+
+typedef struct lox_object lox_object;
 
 typedef enum {
   VAL_BOOL,
