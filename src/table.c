@@ -162,3 +162,12 @@ void lox_hash_table_resize(lox_hash_table *table, int new_capacity) {
   table->entries = entries;
   table->capacity = new_capacity;
 }
+
+void lox_hash_table_remove_white(lox_hash_table *table) {
+  for (int i = 0; i < table->capacity; i++) {
+    lox_hash_table_entry entry = table->entries[i];
+    if (entry.key.type != VAL_EMPTY && !entry.key.as.object->is_marked) {
+      lox_hash_table_remove(table, entry.key);
+    }
+  }
+}

@@ -1,5 +1,6 @@
 #include "chunk.h"
 #include "memory.h"
+#include "vm.h"
 #include <stdio.h>
 #include <string.h>
 
@@ -50,7 +51,9 @@ void lox_chunk_write_array(lox_chunk *chunk, uint8_t *bytes, int size,
 }
 
 int lox_chunk_add_constant(lox_chunk *chunk, lox_value value) {
+  push(value);
   lox_value_array_push(&chunk->constants, value);
+  pop();
   return chunk->constants.size - 1;
 }
 

@@ -2,6 +2,7 @@
 
 #include "common.h"
 #include "table.h"
+#include <stdio.h>
 
 typedef struct {
   lox_object_closure *closure;
@@ -11,8 +12,8 @@ typedef struct {
 
 typedef struct {
   lox_call_frame frames[LOX_MAX_CALL_FRAMES];
-  lox_value_array stack;
   int frame_count;
+  lox_value_array stack;
   // Every string created in lox is interned into this hash table. If the
   // strings table contains a key, it means that the given key is a string that
   // is currently interned.
@@ -26,6 +27,11 @@ typedef struct {
 #endif
   lox_object *objects;
   lox_object_upvalue *open_upvalues;
+  lox_object **gray_stack;
+  int gray_capacity;
+  int gray_size;
+  ssize_t bytes_allocated;
+  ssize_t next_gc;
 } lox_vm;
 
 typedef enum {
@@ -47,3 +53,6 @@ bool lox_values_equal(lox_value lhs, lox_value rhs);
 
 void define_native(lox_vm *vm, const char *name, lox_native_function function,
                    int arity);
+
+void push(lox_value value);
+lox_value pop();

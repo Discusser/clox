@@ -316,7 +316,7 @@ static int get_token_column(lox_token token) {
   return col;
 }
 
-static lox_chunk *current_chunk() { return compiler->function->chunk; }
+static lox_chunk *current_chunk() { return &compiler->function->chunk; }
 
 static void patch_jump(int location) {
   int jump = current_chunk()->code.size - location - 2;
@@ -387,9 +387,9 @@ static lox_object_function *end_compiler() {
   lox_object_function *function = compiler->function;
 #ifdef DEBUG_PRINT_CODE
   if (!parser.had_error) {
-    lox_disassemble_chunk(function->chunk, function->name == NULL
-                                               ? "<script>"
-                                               : function->name->chars);
+    lox_disassemble_chunk(&function->chunk, function->name == NULL
+                                                ? "<script>"
+                                                : function->name->chars);
   }
 #endif
   compiler = compiler->enclosing;
@@ -520,7 +520,7 @@ static void declare_variable(bool constant) {
 
 static void add_local(lox_token name, bool constant) {
   if (compiler->locals.size > LOX_MAX_LOCAL_COUNT) {
-    // NOTE: Since compiler->locals is a dynamic array, we probably don't need
+    // Since compiler->locals is a dynamic array, we probably don't need
     // this error message. It's important to note however that local variable
     // lookup is O(n) which means that having too many locals is not good,
     // unlike global variables that are stored in a hash table.
@@ -1231,4 +1231,14 @@ static uint8_t argument_list() {
   }
   consume_expected(TOKEN_RIGHT_PAREN, "Expected ')' after function arguments.");
   return arg_count;
+}
+
+void lox_compiler_mark_roots() {
+  lox_compiler *current = compiler;
+  while (current != NULL) {
+    // NOTE: This is probably not needed.
+    mark_table(&current->global_constants);
+    mark_object((lox_object *)current->function);
+    current = current->enclosing;
+  }
 }

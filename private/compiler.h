@@ -48,3 +48,5 @@ typedef struct lox_compiler {
 
 // Compiles code from a string, and writes the bytecode to chunk.
 lox_object_function *lox_compiler_compile(const char *source);
+
+void lox_compiler_mark_roots();

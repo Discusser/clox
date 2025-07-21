@@ -37,16 +37,25 @@ void lox_print_object(lox_object *obj) {
 lox_object *lox_object_new(size_t size, lox_object_type type) {
   lox_object *obj = ALLOC_SIZE(size);
   obj->type = type;
+  obj->is_marked = false;
 
   // Insert the newly created object into the list of objects stored in the VM
   // for garbage collection
   obj->next = vm.objects;
   vm.objects = obj;
 
+#ifdef DEBUG_LOG_GC
+  printf("%p allocate %zu for %d\n", obj, size, type);
+#endif
+
   return obj;
 }
 
 void lox_object_free(lox_object *obj) {
+#ifdef DEBUG_LOG_GC
+  printf("%p free type %d\n", obj, obj->type);
+#endif
+
   switch (obj->type) {
   case OBJ_STRING:
     lox_object_string_free((lox_object_string *)obj);
@@ -108,8 +117,10 @@ lox_object_string *lox_object_string_new(char *chars, int length, char flags) {
   obj->hash = hash;
 
   // Intern the newly-created string
+  push(lox_value_from_object((lox_object *)obj));
   lox_hash_table_put(&vm.strings, lox_value_from_object((lox_object *)obj),
                      lox_value_from_nil());
+  pop();
 
   return obj;
 }
@@ -155,8 +166,7 @@ bool lox_object_string_is_constant(lox_object_string *obj) {
 
 lox_object_function *lox_object_function_new() {
   lox_object_function *obj = OBJ_NEW(lox_object_function, OBJ_FUNCTION);
-  obj->chunk = ALLOC_TYPE(lox_chunk);
-  lox_chunk_initialize(obj->chunk);
+  lox_chunk_initialize(&obj->chunk);
   obj->name = NULL;
   obj->arity = 0;
   obj->upvalue_count = 0;
@@ -164,8 +174,7 @@ lox_object_function *lox_object_function_new() {
 }
 
 void lox_object_function_free(lox_object_function *obj) {
-  lox_chunk_free(obj->chunk);
-  FREE(lox_chunk, obj->chunk);
+  lox_chunk_free(&obj->chunk);
   FREE(lox_object_function, obj);
 }
 

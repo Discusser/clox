@@ -27,7 +27,7 @@ static char *read_file(const char *path) {
   size_t file_size = ftell(file);
   rewind(file);
 
-  char *buf = ALLOC_ARRAY(char, (file_size + 1));
+  char *buf = malloc(sizeof(char) * (file_size + 1));
   if (buf == NULL) {
     fprintf(stderr, "Could not allocate buffer to store file at \"%s\"\n",
             path);
@@ -49,7 +49,11 @@ static char *read_file(const char *path) {
 static void run_file(const char *path) {
   char *source = read_file(path);
   interpret_result result = interpret(source);
-  FREE(char, source);
+  free(source);
+
+  // Collect any remaining garbage, especially if the program exited
+  // prematurely.
+  collect_garbage();
 
   if (result == INTERPRET_COMPILE_ERROR)
     exit(EX_DATAERR);

@@ -1,5 +1,6 @@
 #include "value.h"
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include "memory.h"
 #include "object.h"
@@ -37,13 +38,14 @@ void lox_print_value(lox_value value) {
     if (found_dot)
       len = previous_digit_index + 1;
     printf("%.*s", len, buf);
-    FREE(char, buf);
+    free(buf);
     break;
   }
   case VAL_OBJECT:
     lox_print_object(value.as.object);
     break;
   case VAL_EMPTY:
+    printf("EMPTY");
     break;
   }
 }

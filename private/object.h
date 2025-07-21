@@ -1,5 +1,6 @@
 #pragma once
 
+#include "chunk.h"
 #include "value.h"
 #include <stdbool.h>
 #include <stddef.h>
@@ -25,6 +26,7 @@ typedef struct lox_value lox_value;
 // literal (number, boolean, nil), is represented by a child of lox_object.
 typedef struct lox_object {
   lox_object_type type;
+  bool is_marked;
   lox_object *next;
 } lox_object;
 
@@ -44,7 +46,7 @@ typedef struct {
 // Function object used to represent lox functions
 typedef struct {
   lox_object object;
-  lox_chunk *chunk;
+  lox_chunk chunk;
   lox_object_string *name;
   int upvalue_count;
   int arity;

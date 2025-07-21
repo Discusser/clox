@@ -50,3 +50,4 @@ lox_object_string *lox_hash_table_find_string(lox_hash_table *table,
                                               uint32_t hash);
 // Resizes a hash table to the given size.
 void lox_hash_table_resize(lox_hash_table *table, int new_capacity);
+void lox_hash_table_remove_white(lox_hash_table *table);

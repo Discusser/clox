@@ -1,4 +1,5 @@
 add_executable(clox-test ${CLOX_SOURCES})
+target_compile_definitions(clox-test PUBLIC LOX_TEST)
 
 target_include_directories(
   clox-test

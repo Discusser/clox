@@ -16,8 +16,6 @@
 static void free_objects();
 
 static void reset_stack();
-static void push(lox_value value);
-static lox_value pop();
 static lox_value *peek(int n);
 static bool call_value(lox_value value, int arg_count);
 static bool call_closure(lox_object_closure *closure, int arg_count);
@@ -27,6 +25,8 @@ static void close_upvalues(lox_value *last);
 lox_vm vm;
 
 void init_vm() {
+  vm.bytes_allocated = 0;
+  vm.next_gc = 1024 * 1024;
   lox_value_array_initialize(&vm.stack);
   lox_value_array_resize(&vm.stack, LOX_INITIAL_STACK_SIZE);
   lox_hash_table_init(&vm.strings);
@@ -38,6 +38,10 @@ void init_vm() {
 #endif
   vm.objects = NULL;
   vm.open_upvalues = NULL;
+  vm.gray_capacity = 0;
+  vm.gray_size = 0;
+  vm.gray_stack = NULL;
+  vm.frame_count = 0;
   reset_stack();
 
   define_natives(&vm);
@@ -53,6 +57,7 @@ void free_vm() {
   lox_hash_table_free(&vm.local_names);
 #endif
   free_objects();
+  free(vm.gray_stack);
 }
 
 static void free_objects() {
@@ -69,11 +74,9 @@ static void reset_stack() {
   vm.frame_count = 0;
 }
 
-static inline void push(lox_value value) {
-  lox_value_array_push(&vm.stack, value);
-}
+inline void push(lox_value value) { lox_value_array_push(&vm.stack, value); }
 
-static inline lox_value pop() { return lox_value_array_pop(&vm.stack); }
+inline lox_value pop() { return lox_value_array_pop(&vm.stack); }
 
 static inline lox_value *peek(int n) {
   return &vm.stack.values[vm.stack.size - 1 - n];
@@ -127,7 +130,7 @@ static bool call_closure(lox_object_closure *closure, int arg_count) {
 
   lox_call_frame *frame = &vm.frames[vm.frame_count++];
   frame->closure = closure;
-  frame->ip = fun->chunk->code.values;
+  frame->ip = fun->chunk.code.values;
   frame->slots_offset = vm.stack.size - arg_count - 1;
   return true;
 }
@@ -209,9 +212,9 @@ interpret_result run() {
 #define READ_BYTE() (*ip++)
 #define READ_SHORT() (ip += 2, (uint16_t)(ip[-2] << 8 | ip[-1]))
 #define READ_CONST()                                                           \
-  (frame->closure->function->chunk->constants.values[READ_BYTE()])
+  (frame->closure->function->chunk.constants.values[READ_BYTE()])
 #define READ_CONST_LONG()                                                      \
-  (frame->closure->function->chunk->constants.values[READ_SHORT()])
+  (frame->closure->function->chunk.constants.values[READ_SHORT()])
 #define RUNTIME_ERROR(fmt)                                                     \
   do {                                                                         \
     frame->ip = ip;                                                            \
@@ -247,8 +250,8 @@ interpret_result run() {
     }
     printf("\n");
     lox_disassemble_instruction(
-        frame->closure->function->chunk,
-        ip - frame->closure->function->chunk->code.values);
+        &frame->closure->function->chunk,
+        ip - frame->closure->function->chunk.code.values);
 #endif
 
     uint8_t instruction;
@@ -549,9 +552,9 @@ void runtime_error(const char *format, ...) {
   for (int i = vm.frame_count - 1; i >= 0; i--) {
     lox_call_frame *frame = &vm.frames[i];
     lox_object_function *fun = frame->closure->function;
-    size_t instruction = frame->ip - fun->chunk->code.values - 2;
+    size_t instruction = frame->ip - fun->chunk.code.values - 2;
     fprintf(stderr, "  line %d in ",
-            lox_chunk_get_offset_line(fun->chunk, instruction) + 1);
+            lox_chunk_get_offset_line(&fun->chunk, instruction) + 1);
     if (fun->name == NULL) {
       fprintf(stderr, "script");
     } else {
