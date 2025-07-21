@@ -12,7 +12,6 @@ typedef struct {
 
 typedef struct {
   lox_call_frame frames[LOX_MAX_CALL_FRAMES];
-  int frame_count;
   lox_value_array stack;
   // Every string created in lox is interned into this hash table. If the
   // strings table contains a key, it means that the given key is a string that
@@ -32,6 +31,8 @@ typedef struct {
   int gray_size;
   ssize_t bytes_allocated;
   ssize_t next_gc;
+  int frame_count;
+  bool mark_value;
 } lox_vm;
 
 typedef enum {

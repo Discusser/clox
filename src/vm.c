@@ -5,7 +5,6 @@
 #include "value.h"
 #include "chunk.h"
 #include "compiler.h"
-#include "debug.h"
 #include <assert.h>
 #include <math.h>
 #include <stdarg.h>
@@ -21,10 +20,15 @@ static bool call_value(lox_value value, int arg_count);
 static bool call_closure(lox_object_closure *closure, int arg_count);
 static lox_object_upvalue *capture_upvalue(lox_value *local);
 static void close_upvalues(lox_value *last);
+static void print_settings();
 
 lox_vm vm;
 
 void init_vm() {
+#ifdef DEBUG_PRINT_SETTINGS
+  print_settings();
+#endif
+
   vm.bytes_allocated = 0;
   vm.next_gc = 1024 * 1024;
   lox_value_array_initialize(&vm.stack);
@@ -42,6 +46,7 @@ void init_vm() {
   vm.gray_size = 0;
   vm.gray_stack = NULL;
   vm.frame_count = 0;
+  vm.mark_value = true;
   reset_stack();
 
   define_natives(&vm);
@@ -585,4 +590,20 @@ void define_native(lox_vm *vm, const char *name, lox_native_function function,
 
   pop();
   pop();
+}
+
+static void print_settings() {
+#define SETI(name) printf("  " #name "=%i\n", lox_settings.name)
+#define SETF(name) printf("  " #name "=%f\n", lox_settings.name)
+
+  printf("Lox Settings:\n");
+  SETI(array_minimum_capacity);
+  SETI(array_scale_factor);
+  SETI(gc_heap_grow_factor);
+  SETF(hash_table_load_factor);
+  SETI(initial_stack_size);
+  SETI(max_local_count);
+
+#undef SETF
+#undef SETI
 }

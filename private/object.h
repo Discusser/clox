@@ -6,7 +6,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-typedef enum {
+typedef enum : uint8_t {
   OBJ_STRING,
   OBJ_FUNCTION,
   OBJ_NATIVE,

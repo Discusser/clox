@@ -2,8 +2,9 @@
 #include "memory.h"
 #include "vm.h"
 #include <assert.h>
-#include <stdio.h>
 #include <string.h>
+
+extern lox_vm vm;
 
 void lox_hash_table_init(lox_hash_table *table) {
   table->capacity = 0;
@@ -166,7 +167,8 @@ void lox_hash_table_resize(lox_hash_table *table, int new_capacity) {
 void lox_hash_table_remove_white(lox_hash_table *table) {
   for (int i = 0; i < table->capacity; i++) {
     lox_hash_table_entry entry = table->entries[i];
-    if (entry.key.type != VAL_EMPTY && !entry.key.as.object->is_marked) {
+    if (entry.key.type != VAL_EMPTY &&
+        entry.key.as.object->is_marked != vm.mark_value) {
       lox_hash_table_remove(table, entry.key);
     }
   }

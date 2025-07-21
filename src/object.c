@@ -37,7 +37,7 @@ void lox_print_object(lox_object *obj) {
 lox_object *lox_object_new(size_t size, lox_object_type type) {
   lox_object *obj = ALLOC_SIZE(size);
   obj->type = type;
-  obj->is_marked = false;
+  obj->is_marked = !vm.mark_value;
 
   // Insert the newly created object into the list of objects stored in the VM
   // for garbage collection

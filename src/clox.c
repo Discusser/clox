@@ -1,8 +1,16 @@
 #include "memory.h"
+#include <argp.h>
 #include "vm.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <sysexits.h>
+
+struct lox_settings lox_settings;
+
+const char *argp_program_version = LOX_PROGRAM_VERSION;
+const struct argp_option long_options[] = {
+    {"array_minimum_capacity", required_argument, 0, 0}, {0, 0, 0, 0}};
+// static struct argp argp = {long_options, parse_opt}
 
 static void repl() {
   char line[1024];
@@ -61,16 +69,27 @@ static void run_file(const char *path) {
     exit(EX_SOFTWARE);
 }
 
-int main(int argc, const char **argv) {
+static void parse_opts(int argc, char *const *argv) {}
+
+static void apply_default_settings() {
+  lox_settings.array_minimum_capacity = 256;
+  lox_settings.array_scale_factor = 2;
+  lox_settings.gc_heap_grow_factor = 2;
+  lox_settings.hash_table_load_factor = 0.75;
+  lox_settings.initial_stack_size = 256;
+  lox_settings.max_local_count = 256;
+}
+
+int main(int argc, char *const *argv) {
+  apply_default_settings();
+  parse_opts(argc, argv);
+
   init_vm();
 
-  if (argc == 1) {
+  if (optind == argc) {
     repl();
-  } else if (argc == 2) {
-    run_file(argv[1]);
-  } else {
-    fprintf(stderr, "Usage: %s [path_to_file]\n", argv[0]);
-    exit(EX_USAGE);
+  } else if (optind == argc - 1) {
+    run_file(argv[optind]);
   }
 
   free_vm();

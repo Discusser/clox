@@ -26,7 +26,7 @@ void *lox_reallocate(void *ptr, ssize_t old_size, ssize_t new_size) {
 
   if (new_size > old_size) {
 #ifdef DEBUG_STRESS_GC
-    collect_garbage();
+    jollect_garbage();
 #endif
 
     if (vm.bytes_allocated > vm.next_gc) {
@@ -62,6 +62,7 @@ void collect_garbage() {
   sweep();
 
   vm.next_gc = vm.bytes_allocated * LOX_GC_HEAP_GROW_FACTOR;
+  vm.mark_value = !vm.mark_value;
 
 #ifdef DEBUG_LOG_GC
   printf("-- GC END\n");
@@ -97,9 +98,9 @@ void mark_value(lox_value value) {
 }
 
 void mark_object(lox_object *obj) {
-  if (obj == NULL || obj->is_marked)
+  if (obj == NULL || obj->is_marked == vm.mark_value)
     return;
-  obj->is_marked = true;
+  obj->is_marked = vm.mark_value;
 
   if (vm.gray_capacity < vm.gray_size + 1) {
     vm.gray_capacity = GROW_CAPACITY(vm.gray_capacity);
@@ -187,8 +188,7 @@ static void sweep() {
   lox_object *previous = NULL;
   lox_object *object = vm.objects;
   while (object != NULL) {
-    if (object->is_marked) {
-      object->is_marked = false;
+    if (object->is_marked == vm.mark_value) {
       previous = object;
       object = object->next;
     } else {
