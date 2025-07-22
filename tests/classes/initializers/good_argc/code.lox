@@ -1,0 +1,8 @@
+class MyClass {
+  init(a, b) {
+    print a;
+    print b;
+  }
+}
+
+MyClass(5, 4);

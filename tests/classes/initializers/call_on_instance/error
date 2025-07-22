@@ -1,0 +1,3 @@
+Runtime Error: Cannot call initializer on an instance of 'MyClass'.
+Stacktrace:
+  line 8 in script

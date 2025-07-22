@@ -53,12 +53,15 @@
 # GRAMMAR START ---------------------------------------------------------------
 program            → declaration* EOF ;
 
-declaration        → variable_declaration | function_declaration | statement ;
+declaration        → variable_declaration | function_declaration | class_declaration | 
+                     statement ;
 variable_declaration
                    → ( "var" | "const" ) identifier ( "=" expression )? ";" ;
 function_declaration
-                   → "fun" identifier "(" arguments ")" block
+                   → "fun" function ;
+class_declaration  → "class" identifier "{" function* "}" ;
 
+function           → identifier "(" arguments ")" block ;
 arguments          → ( ( identifier "," )* identifier )?
 
 statement          → print_statement | break_statement | continue_statement |
@@ -81,20 +84,19 @@ return_statement   → "return" expression ";" ;
 default_case       → "default" ":" statement*
 switch_case        → "switch" expression ":" statement* ;
 
-primary            → grouping | unary | variable | string | number | literal ;
-call               → primary | ( "(" arguments ")" )*;
+primary            → grouping | identifier | string | number | literal ;
+call               → primary ( "(" arguments ")" | "." IDENTIFIER )*;
 unary              → ( "!" | "-" )* call ;
 factor             → unary ( ( "/" | "*" | "%" ) unary )* ;
 term               → factor ( ( "-" | "+" ) factor )* ;
 comparison         → term ( ( ">" | ">=" | "<" | "<=" ) term )* ;
 equality           → comparison ( ( "!=" | "==" ) comparison )* ;
 and                → equality ( "and" equality )* ;
-or                 → and ( " or " and )* ;
-assignment         → or ;
+or                 → and ( "or" and )* ;
+assignment         → ( ( call "." )? IDENTIFIER "=" assignment ) | or ;
 expression         → assignment ;
 
 grouping           → "(" expression ")"
-variable           → identifier ( "=" expression )?
 string             → '"' ( any_character & !( EOF | '"' ) )* '"'
 number             → digit* ( "." digit+ )?
 literal            → "false" | "true" | "nil"

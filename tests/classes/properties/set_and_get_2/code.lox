@@ -1,0 +1,10 @@
+class Toast {}
+
+var toast = Toast();
+toast.something = "test";
+toast.more = "test3";
+toast.other = "test2";
+print toast.something;
+print toast.other;
+print toast.more;
+print toast.something;

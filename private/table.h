@@ -3,12 +3,14 @@
 #include "object.h"
 #include "value.h"
 
-typedef struct {
+typedef struct lox_object_string lox_object_string;
+
+typedef struct lox_hash_table_entry {
   lox_value key;
   lox_value value;
 } lox_hash_table_entry;
 
-typedef struct {
+typedef struct lox_hash_table {
   int count;
   int capacity;
   lox_hash_table_entry *entries;

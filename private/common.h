@@ -30,7 +30,8 @@ extern struct lox_settings lox_settings;
 // #define DEBUG_STRESS_GC
 // #define DEBUG_LOG_GC
 // #define DEBUG_LOG_GC_VERBOSE
-// #define DEBUG_TRACE_EXECUTION
-// #define DEBUG_PRINT_CODE
-#define DEBUG_PRINT_SETTINGS
+#define DEBUG_TRACE_EXECUTION
+#define DEBUG_PRINT_CODE
+#define DEBUG_PRINT_CODE_VERBOSE
+// #define DEBUG_PRINT_SETTINGS
 #endif

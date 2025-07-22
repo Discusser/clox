@@ -91,7 +91,9 @@ static void parse_precedence(lox_precedence precedence);
 static void declaration();
 static void variable_declaration();
 static void function_declaration();
+static void class_declaration();
 static void function(lox_function_type type);
+static void method();
 static void statement();
 static void break_statement();
 static void continue_statement();
@@ -117,12 +119,15 @@ static void string(bool can_assign);
 static void compile_and(bool can_assign);
 static void compile_or(bool can_assign);
 static void call(bool can_assign);
+static void dot(bool can_assign);
+static void compile_this(bool can_assign);
 static uint8_t argument_list();
 
 extern lox_vm vm;
 
 lox_parser parser;
 lox_compiler *compiler;
+lox_class_compiler *class_compiler;
 lox_chunk *compiling_chunk;
 const char *compiling_source;
 
@@ -132,7 +137,7 @@ lox_parse_rule rules[] = {
     [TOKEN_LEFT_BRACE] = {NULL, NULL, PREC_NONE},
     [TOKEN_RIGHT_BRACE] = {NULL, NULL, PREC_NONE},
     [TOKEN_COMMA] = {NULL, NULL, PREC_NONE},
-    [TOKEN_DOT] = {NULL, NULL, PREC_NONE},
+    [TOKEN_DOT] = {NULL, dot, PREC_CALL},
     [TOKEN_MINUS] = {unary, binary, PREC_TERM},
     [TOKEN_PLUS] = {NULL, binary, PREC_TERM},
     [TOKEN_SEMICOLON] = {NULL, NULL, PREC_NONE},
@@ -163,7 +168,7 @@ lox_parse_rule rules[] = {
     [TOKEN_PRINT] = {NULL, NULL, PREC_NONE},
     [TOKEN_RETURN] = {NULL, NULL, PREC_NONE},
     [TOKEN_SUPER] = {NULL, NULL, PREC_NONE},
-    [TOKEN_THIS] = {NULL, NULL, PREC_NONE},
+    [TOKEN_THIS] = {compile_this, NULL, PREC_NONE},
     [TOKEN_TRUE] = {literal, NULL, PREC_NONE},
     [TOKEN_VAR] = {NULL, NULL, PREC_NONE},
     [TOKEN_CONST] = {NULL, NULL, PREC_NONE},
@@ -214,15 +219,19 @@ void init_compiler(lox_compiler *curr, lox_function_type function_type) {
   compiler->break_depth = 0;
   compiler->function = lox_object_function_new();
 
-  lox_local local;
-  local.depth = 0;
-  local.is_captured = false;
-  local.is_constant = false;
-  local.name.start = 0;
-  local.name.length = 0;
-  local.name.line = -1;
-  local.name.type = 0;
-  lox_local_array_push(&compiler->locals, local);
+  lox_token local_token;
+  local_token.line = -1;
+  local_token.type = TOKEN_IDENTIFIER;
+  if (function_type == TYPE_METHOD || function_type == TYPE_INITIALIZER) {
+    local_token.start = "this";
+    local_token.length = 4;
+  } else {
+    local_token.start = "";
+    local_token.length = 0;
+  }
+  add_local(local_token, false);
+  lox_local *local = &compiler->locals.values[compiler->locals.size - 1];
+  local->depth = 0;
 }
 
 static void consume() {
@@ -349,6 +358,9 @@ static int emit_jump(lox_op_code jump) {
 }
 
 static void emit_byte(uint8_t byte) {
+#ifdef DEBUG_PRINT_CODE_VERBOSE
+  printf("%4d Emit byte %i\n", current_chunk()->code.size, byte);
+#endif
   lox_chunk_write(current_chunk(), byte, parser.previous.line);
 }
 
@@ -374,7 +386,11 @@ static uint16_t emit_constant(lox_value value) {
 }
 
 static void emit_return() {
-  emit_byte(OP_NIL);
+  if (compiler->function_type == TYPE_INITIALIZER) {
+    emit_bytes2(OP_GET_LOCAL, 0);
+  } else {
+    emit_byte(OP_NIL);
+  }
   emit_byte(OP_RETURN);
 }
 
@@ -438,8 +454,10 @@ static uint16_t identifier_constant(lox_token *name, bool *is_cached) {
     if (is_cached)
       *is_cached = true;
 
-    // NOTE: We probably have to free key here since the entry already exists,
-    // unless the GC should take care of it
+    // We actually don't need to free the key string we created, because we
+    // intern strings. If the key string already exists, freeing could
+    // potentially free identical strings that are still in use. The garbage
+    // collector should be able to deal with this instead.
     assert(global.type == VAL_NUMBER);
     return global.as.number;
   }
@@ -700,6 +718,8 @@ static void declaration() {
     variable_declaration();
   } else if (match(TOKEN_FUN)) {
     function_declaration();
+  } else if (match(TOKEN_CLASS)) {
+    class_declaration();
   } else {
     statement();
   }
@@ -730,6 +750,36 @@ static void function_declaration() {
   mark_initialized();
   function(TYPE_FUNCTION);
   define_variable(global);
+}
+
+static void class_declaration() {
+  consume_expected(TOKEN_IDENTIFIER, "Expected class name.");
+  lox_token *name_token = &parser.previous;
+  uint16_t index = identifier_constant(&parser.previous, NULL);
+  lox_object_string *name =
+      lox_object_string_new_copy(name_token->start, name_token->length);
+
+  // TODO: Add OP_CLASS_LONG to allow for more than 255 classes.
+  emit_byte(OP_CLASS);
+  emit_byte(lox_chunk_add_constant(current_chunk(),
+                                   lox_value_from_object((lox_object *)name)));
+
+  define_variable(index);
+
+  lox_class_compiler current;
+  current.enclosing = class_compiler;
+  class_compiler = &current;
+
+  named_variable(*name_token, false);
+
+  consume_expected(TOKEN_LEFT_BRACE, "Expected '{' after class name.");
+  while (!check(TOKEN_RIGHT_BRACE) && !check(TOKEN_EOF)) {
+    method();
+  }
+  consume_expected(TOKEN_RIGHT_BRACE, "Expected '}' after class body.");
+  emit_byte(OP_POP);
+
+  class_compiler = current.enclosing;
 }
 
 static void function(lox_function_type type) {
@@ -764,6 +814,24 @@ static void function(lox_function_type type) {
     emit_byte(new_compiler.upvalues[i].is_local ? 1 : 0);
     emit_short(new_compiler.upvalues[i].index);
   }
+}
+
+static void method() {
+  consume_expected(TOKEN_IDENTIFIER, "Expected method name.");
+  uint16_t constant = identifier_constant(&parser.previous, NULL);
+  lox_object_string *name =
+      lox_object_string_new_copy(parser.previous.start, parser.previous.length);
+  lox_function_type type = TYPE_METHOD;
+  // Since we do string interning, two equal strings should point to the same
+  // memory
+  if (name == (lox_object_string *)vm.init_string.as.object) {
+    type = TYPE_INITIALIZER;
+  }
+  // TODO: Add support for more than 256 methods
+  function(type);
+  emit_byte(OP_METHOD);
+  emit_byte(lox_chunk_add_constant(current_chunk(),
+                                   lox_value_from_object((lox_object *)name)));
 }
 
 static void statement() {
@@ -1023,6 +1091,9 @@ static void return_statement() {
   if (compiler->function_type == TYPE_SCRIPT) {
     error("Can't return outside of a function.");
   }
+  if (compiler->function_type == TYPE_INITIALIZER) {
+    error("Can't return inside an initializer.");
+  }
 
   if (match(TOKEN_SEMICOLON)) {
     emit_return();
@@ -1215,6 +1286,38 @@ static void compile_or(bool can_assign) {
 static void call(bool can_assign) {
   uint8_t arg_count = argument_list();
   emit_bytes2(OP_CALL, arg_count);
+}
+
+static void dot(bool can_assign) {
+  consume_expected(TOKEN_IDENTIFIER, "Expected property name after '.'.");
+  // TODO: Add support for more than 256 properties
+  lox_token *name_token = &parser.previous;
+  uint8_t index = (uint8_t)identifier_constant(&parser.previous, NULL);
+  lox_object_string *name =
+      lox_object_string_new_copy(name_token->start, name_token->length);
+  int constant = lox_chunk_add_constant(
+      current_chunk(), lox_value_from_object((lox_object *)name));
+
+  if (can_assign && match(TOKEN_EQUAL)) {
+    expression();
+    emit_byte(OP_SET_PROPERTY);
+    emit_byte(constant);
+  } else if (match(TOKEN_LEFT_PAREN)) {
+    uint8_t argc = argument_list();
+    emit_bytes2(OP_INVOKE, constant);
+    emit_byte(argc);
+  } else {
+    emit_byte(OP_GET_PROPERTY);
+    emit_byte(constant);
+  }
+}
+
+static void compile_this(bool can_assign) {
+  if (class_compiler == NULL) {
+    error("Cannot use 'this' outside of a class.");
+    return;
+  }
+  variable(false);
 }
 
 static uint8_t argument_list() {

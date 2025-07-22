@@ -1,0 +1,5 @@
+class MYCLASS {}
+
+var inst = MYCLASS();
+
+print getProperty(inst, "nonexistent");

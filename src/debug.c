@@ -18,11 +18,6 @@ static int jump_instruction(const char *name, lox_chunk *chunk, int sign,
 static int byte_instruction(const char *name, lox_chunk *chunk, int offset);
 static int short_instruction(const char *name, lox_chunk *chunk, int offset);
 
-// This function returns a nil value if NDEBUG is set. Otherwise, it returns the
-// name of the global variable with the given index.
-static lox_value lox_get_global_name(uint16_t global);
-static lox_value lox_get_local_name(uint16_t local);
-
 extern lox_vm vm;
 extern lox_compiler *compiler;
 
@@ -135,6 +130,23 @@ int lox_disassemble_instruction(lox_chunk *chunk, int offset) {
     }
     return offset;
   }
+  case OP_CLASS:
+    return constant_instruction("OP_CLASS", chunk, offset);
+  case OP_SET_PROPERTY:
+    return byte_instruction("OP_SET_PROPERTY", chunk, offset);
+  case OP_GET_PROPERTY:
+    return byte_instruction("OP_GET_PROPERTY", chunk, offset);
+  case OP_METHOD:
+    return constant_instruction("OP_METHOD", chunk, offset);
+  case OP_INVOKE: {
+    uint8_t constant = chunk->code.values[offset + 1];
+    uint8_t argc = chunk->code.values[offset + 2];
+    printf("%-16s argc   %5d index  %d  value '", "OP_INVOKE", argc, constant);
+    lox_print_value(chunk->constants.values[constant]);
+    printf("'\n");
+    return offset + 3;
+  }
+
   default:
     printf("Unknown opcode %d\n", instruction);
     return offset + 1;
@@ -213,7 +225,7 @@ static int short_instruction(const char *name, lox_chunk *chunk, int offset) {
   return offset + 3;
 }
 
-static lox_value lox_get_global_name(uint16_t global) {
+lox_value lox_get_global_name(uint16_t global) {
 #ifndef NDEBUG
   lox_value value;
   if (!lox_hash_table_get(&vm.global_names, lox_value_from_number(global),
@@ -222,11 +234,19 @@ static lox_value lox_get_global_name(uint16_t global) {
   }
   return value;
 #else
-  return lox_value_from_nil();
+  // If debug mode is not enabled, we have to perform a linear search to find
+  // the name of the variable. Luckily, outside of debug mode, this is only
+  // called when an error occurs, therefore performance is not important here.
+  for (int i = 0; i < vm.global_indices.capacity; i++) {
+    lox_hash_table_entry entry = vm.global_indices.entries[i];
+    if (entry.value.type == VAL_NUMBER && entry.value.as.number == global) {
+      return entry.key;
+    }
+  }
 #endif
 }
 
-static lox_value lox_get_local_name(uint16_t local) {
+lox_value lox_get_local_name(uint16_t local) {
 #ifndef NDEBUG
   lox_value value;
   if (!lox_hash_table_get(&vm.local_names, lox_value_from_number(local),

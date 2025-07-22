@@ -1,0 +1,14 @@
+class Calc {
+  init() {
+    this.val = 0;
+  }
+
+  incr() {
+    this.val = this.val + 1;
+  }
+}
+
+var calc = Calc();
+calc.incr();
+calc.incr();
+print calc.val;

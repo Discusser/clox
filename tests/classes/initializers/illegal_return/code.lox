@@ -1,0 +1,5 @@
+class MyClass {
+  init() {
+    return 5;
+  }
+}

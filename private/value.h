@@ -50,3 +50,7 @@ bool lox_value_is_object(lox_value value);
 bool lox_value_is_string(lox_value value);
 bool lox_value_is_function(lox_value value);
 bool lox_value_is_native(lox_value value);
+bool lox_value_is_closure(lox_value value);
+bool lox_value_is_upvalue(lox_value value);
+bool lox_value_is_class(lox_value value);
+bool lox_value_is_instance(lox_value value);

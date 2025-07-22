@@ -13,6 +13,7 @@ typedef struct {
 typedef struct {
   lox_call_frame frames[LOX_MAX_CALL_FRAMES];
   lox_value_array stack;
+  lox_value init_string;
   // Every string created in lox is interned into this hash table. If the
   // strings table contains a key, it means that the given key is a string that
   // is currently interned.

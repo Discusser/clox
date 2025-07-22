@@ -22,11 +22,17 @@ typedef struct {
   bool is_local;
 } lox_up_value;
 
-typedef enum { TYPE_FUNCTION, TYPE_SCRIPT } lox_function_type;
+typedef enum {
+  TYPE_FUNCTION,
+  TYPE_METHOD,
+  TYPE_INITIALIZER,
+  TYPE_SCRIPT
+} lox_function_type;
 
 DECLARE_LOX_ARRAY(lox_local, local_array);
 
 typedef struct lox_compiler lox_compiler;
+typedef struct lox_class_compiler lox_class_compiler;
 
 typedef struct lox_compiler {
   lox_up_value upvalues[256];
@@ -45,6 +51,10 @@ typedef struct lox_compiler {
   int continue_depth;
   int break_depth;
 } lox_compiler;
+
+typedef struct lox_class_compiler {
+  lox_class_compiler *enclosing;
+} lox_class_compiler;
 
 // Compiles code from a string, and writes the bytecode to chunk.
 lox_object_function *lox_compiler_compile(const char *source);

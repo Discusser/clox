@@ -87,6 +87,7 @@ void mark_roots() {
 
   mark_table(&vm.global_indices);
   mark_value_array(&vm.globals);
+  mark_value(vm.init_string);
 
   lox_compiler_mark_roots();
 }
@@ -173,6 +174,23 @@ static void blacken_object(lox_object *obj) {
   case OBJ_UPVALUE:
     mark_value(((lox_object_upvalue *)obj)->closed);
     break;
+  case OBJ_CLASS: {
+    lox_object_class *clazz = (lox_object_class *)obj;
+    mark_object((lox_object *)clazz->name);
+    mark_table(clazz->methods);
+  } break;
+  case OBJ_INSTANCE: {
+    lox_object_instance *inst = (lox_object_instance *)obj;
+    mark_object((lox_object *)inst->clazz);
+    mark_table(inst->fields);
+    break;
+  }
+  case OBJ_BOUND_METHOD: {
+    lox_object_bound_method *inst = (lox_object_bound_method *)obj;
+    mark_object((lox_object *)inst->method);
+    mark_value(inst->receiver);
+    break;
+  }
   }
 }
 

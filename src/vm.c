@@ -1,4 +1,5 @@
 #include "vm.h"
+#include "debug.h"
 #include "memory.h"
 #include "native/native.h"
 #include "object.h"
@@ -20,6 +21,11 @@ static bool call_value(lox_value value, int arg_count);
 static bool call_closure(lox_object_closure *closure, int arg_count);
 static lox_object_upvalue *capture_upvalue(lox_value *local);
 static void close_upvalues(lox_value *last);
+static void define_method(lox_value name);
+static bool invoke(lox_value name, int argc);
+static bool invoke_from_class(lox_object_class *clazz, lox_value name,
+                              int argc);
+static bool bind_method(lox_object_class *clazz, lox_value name);
 static void print_settings();
 
 lox_vm vm;
@@ -47,6 +53,8 @@ void init_vm() {
   vm.gray_stack = NULL;
   vm.frame_count = 0;
   vm.mark_value = true;
+  vm.init_string = lox_value_from_object(
+      (lox_object *)lox_object_string_new_copy("init", 4));
   reset_stack();
 
   define_natives(&vm);
@@ -93,7 +101,23 @@ static inline lox_value peekv(int n) {
 
 static bool call_value(lox_value value, int arg_count) {
   if (lox_value_is_object(value)) {
-    switch (((lox_object *)value.as.object)->type) {
+    switch (value.as.object->type) {
+    case OBJ_CLASS: {
+      lox_object_class *clazz = (lox_object_class *)value.as.object;
+      vm.stack.values[vm.stack.size - arg_count - 1] =
+          lox_value_from_object((lox_object *)lox_object_instance_new(clazz));
+      lox_value initializer;
+      if (lox_hash_table_get(clazz->methods, vm.init_string, &initializer)) {
+        return call_closure((lox_object_closure *)initializer.as.object,
+                            arg_count);
+      } else if (arg_count != 0) {
+        runtime_error(
+            "Expected 0 arguments to class initializer, found %i instead.",
+            arg_count);
+        return false;
+      }
+      return true;
+    }
     case OBJ_CLOSURE: {
       return call_closure((lox_object_closure *)value.as.object, arg_count);
     }
@@ -110,6 +134,12 @@ static bool call_value(lox_value value, int arg_count) {
       push(ret);
       return true;
     }
+    case OBJ_BOUND_METHOD: {
+      lox_object_bound_method *bound =
+          (lox_object_bound_method *)value.as.object;
+      vm.stack.values[vm.stack.size - arg_count - 1] = bound->receiver;
+      return call_closure(bound->method, arg_count);
+    }
     default:
       break;
     }
@@ -122,7 +152,7 @@ static bool call_value(lox_value value, int arg_count) {
 static bool call_closure(lox_object_closure *closure, int arg_count) {
   lox_object_function *fun = closure->function;
   if (arg_count != fun->arity) {
-    runtime_error("Function %s expected %i arguments, found %i instead.",
+    runtime_error("Function '%s' expected %i arguments, found %i instead.",
                   fun->name->chars, fun->arity, arg_count);
     return false;
   }
@@ -211,7 +241,9 @@ interpret_result run() {
   lox_call_frame *frame = &vm.frames[vm.frame_count - 1];
   // We store this in a register because this variable is used very frequently
   // from many instructions. Since we're caching the value, we have to update it
-  // every time the frame changes.
+  // every time the frame changes, that is, every time we push or pop a frame,
+  // which usually means every time we call a function or method, or return from
+  // one.
   register uint8_t *ip = frame->ip;
 
 #define READ_BYTE() (*ip++)
@@ -224,11 +256,13 @@ interpret_result run() {
   do {                                                                         \
     frame->ip = ip;                                                            \
     runtime_error(fmt);                                                        \
+    return INTERPRET_RUNTIME_ERROR;                                            \
   } while (0)
 #define RUNTIME_ERROR_ARGS(fmt, ...)                                           \
   do {                                                                         \
     frame->ip = ip;                                                            \
     runtime_error(fmt, __VA_ARGS__);                                           \
+    return INTERPRET_RUNTIME_ERROR;                                            \
   } while (0)
 
 #define BINARY_OP(make_value, op)                                              \
@@ -240,8 +274,7 @@ interpret_result run() {
           make_value(lhs.as.number op rhs.as.number);                          \
       vm.stack.size--;                                                         \
     } else {                                                                   \
-      RUNTIME_ERROR("Operands must be numbers.");                              \
-      return INTERPRET_RUNTIME_ERROR;                                          \
+      RUNTIME_ERROR("Operands must be numbers for '" #op "'.");                \
     }                                                                          \
   } while (false)
 
@@ -319,7 +352,6 @@ interpret_result run() {
             lox_value_from_number(-value.as.number);
       } else {
         RUNTIME_ERROR("Operand must be a number.");
-        return INTERPRET_RUNTIME_ERROR;
       }
       break;
     }
@@ -349,7 +381,6 @@ interpret_result run() {
         vm.stack.size--;
       } else {
         RUNTIME_ERROR("Operands must be numbers or strings.");
-        return INTERPRET_RUNTIME_ERROR;
       }
       break;
     }
@@ -366,14 +397,12 @@ interpret_result run() {
         if (lhs.type == VAL_NUMBER && rhs.type == VAL_NUMBER) {
           if (rhs.as.number == 0) {
             RUNTIME_ERROR("Cannot divide by zero.");
-            return INTERPRET_RUNTIME_ERROR;
           }
           vm.stack.values[vm.stack.size - 2] =
               lox_value_from_number(lhs.as.number / rhs.as.number);
           vm.stack.size--;
         } else {
           RUNTIME_ERROR("Operands must be numbers.");
-          return INTERPRET_RUNTIME_ERROR;
         }
       } while (0);
       break;
@@ -387,7 +416,6 @@ interpret_result run() {
           vm.stack.size--;
         } else {
           RUNTIME_ERROR("Operands must be numbers.");
-          return INTERPRET_RUNTIME_ERROR;
         }
       } while (0);
       break;
@@ -416,8 +444,9 @@ interpret_result run() {
 
       lox_value value = vm.globals.values[index];
       if (value.type == VAL_EMPTY) {
-        RUNTIME_ERROR("Undefined variable.");
-        return INTERPRET_RUNTIME_ERROR;
+        RUNTIME_ERROR_ARGS(
+            "Undefined variable '%s'.",
+            ((lox_object_string *)lox_get_global_name(index).as.object)->chars);
       }
 
       push(value);
@@ -436,8 +465,9 @@ interpret_result run() {
 
       lox_value value = vm.globals.values[index];
       if (value.type == VAL_EMPTY) {
-        RUNTIME_ERROR("Undefined variable.");
-        return INTERPRET_RUNTIME_ERROR;
+        RUNTIME_ERROR_ARGS(
+            "Undefined variable '%s'.",
+            ((lox_object_string *)lox_get_global_name(index).as.object)->chars);
       }
 
       // We don't pop the value because this is an expression, so it must return
@@ -529,6 +559,70 @@ interpret_result run() {
       push(lox_value_from_object((lox_object *)closure));
       break;
     }
+    case OP_CLASS: {
+      // NOTE: By doing this, we consider that classes are always globals, even
+      // though they can be defined as locals (inside of a class or inside of a
+      // function).
+      lox_object_string *name = (lox_object_string *)READ_CONST().as.object;
+      lox_object_class *clazz = lox_object_class_new(name);
+      push(lox_value_from_object((lox_object *)clazz));
+      break;
+    }
+    case OP_SET_PROPERTY: {
+      lox_value top = peekv(1);
+      if (!lox_value_is_instance(top)) {
+        RUNTIME_ERROR("Cannot set property on object that isn't an instance.");
+      }
+
+      lox_object_instance *instance = (lox_object_instance *)top.as.object;
+      lox_value name = READ_CONST();
+      if (name.as.object->type != OBJ_STRING) {
+        runtime_error("Expected string for property name.");
+      }
+      lox_value val = peekv(0);
+      lox_hash_table_put(instance->fields, name, val);
+      // Pop the value, then the instance, and then push the value
+      vm.stack.size--;
+      vm.stack.values[vm.stack.size - 1] = val;
+      break;
+    }
+    case OP_GET_PROPERTY: {
+      lox_value top = peekv(0);
+      if (!lox_value_is_instance(top)) {
+        RUNTIME_ERROR("Cannot get property on object that isn't an instance.");
+      }
+
+      lox_object_instance *instance = (lox_object_instance *)top.as.object;
+      lox_value name = READ_CONST();
+      lox_value val;
+
+      // First we check if a field with the name exists, then if nothing was
+      // found we look for a method.
+      if (lox_hash_table_get(instance->fields, name, &val)) {
+        // Pop the instance, and push the value
+        vm.stack.values[vm.stack.size - 1] = val;
+      } else {
+        if (!bind_method(instance->clazz, name)) {
+          return INTERPRET_RUNTIME_ERROR;
+        }
+      }
+
+      break;
+    }
+    case OP_METHOD:
+      define_method(READ_CONST());
+      break;
+    case OP_INVOKE: {
+      lox_value name = READ_CONST();
+      uint8_t argc = READ_BYTE();
+      frame->ip = ip;
+      if (!invoke(name, argc)) {
+        return INTERPRET_RUNTIME_ERROR;
+      }
+      frame = &vm.frames[vm.frame_count - 1];
+      ip = frame->ip;
+      break;
+    }
     default:
       printf("Unknown instruction %i\n", instruction);
       return INTERPRET_RUNTIME_ERROR;
@@ -590,6 +684,86 @@ void define_native(lox_vm *vm, const char *name, lox_native_function function,
 
   pop();
   pop();
+}
+
+static void define_method(lox_value name) {
+  lox_value method = peekv(0);
+  lox_object_class *clazz = (lox_object_class *)peekv(1).as.object;
+  lox_hash_table_put(clazz->methods, name, method);
+  // Pop the method off the stack
+  vm.stack.size--;
+}
+
+static bool invoke(lox_value name, int argc) {
+  lox_value receiver = peekv(argc);
+  if (!lox_value_is_instance(receiver)) {
+    runtime_error("Cannot invoke method on object that isn't an instance.");
+    return false;
+  }
+
+  lox_object_instance *inst = (lox_object_instance *)receiver.as.object;
+  lox_value value;
+  if (lox_hash_table_get(inst->fields, name, &value)) {
+    vm.stack.values[vm.stack.size - argc - 1] = value;
+    call_value(value, argc);
+  }
+
+  if (lox_values_equal(name, vm.init_string)) {
+    // Calling a constructor on an instance of a class is just weird, since
+    // the constructor is supposed to initialize the class, and thus
+    // shouldn't be called multiple times for the same object.
+    char *class_name = inst->clazz->name->chars;
+    runtime_error("Cannot call initializer on an instance of '%s'.",
+                  class_name);
+    return false;
+  }
+
+  return invoke_from_class(inst->clazz, name, argc);
+}
+
+static bool invoke_from_class(lox_object_class *clazz, lox_value name,
+                              int argc) {
+  lox_value method;
+  if (!lox_hash_table_get(clazz->methods, name, &method)) {
+    runtime_error("Undefined property '%s' in instance of '%s'.",
+                  ((lox_object_string *)name.as.object)->chars,
+                  clazz->name->chars);
+    return false;
+  }
+
+  return call_closure((lox_object_closure *)method.as.object, argc);
+}
+
+static bool bind_method(lox_object_class *clazz, lox_value name) {
+  if (name.as.object->type != OBJ_STRING) {
+    runtime_error("Expected string for property name.");
+  }
+
+  if (lox_values_equal(name, vm.init_string)) {
+    runtime_error("Cannot refer to initializer from an instance of '%s'.",
+                  clazz->name->chars);
+    return false;
+  }
+
+  lox_value method;
+  if (!lox_hash_table_get(clazz->methods, name, &method)) {
+    // This function expects an instance to be sitting on top of the stack, so
+    // we can say instance in the error messages aswell despite methods being
+    // defined in classes.
+    runtime_error("Undefined property '%s' in instance of '%s'.",
+                  ((lox_object_string *)name.as.object)->chars,
+                  clazz->name->chars);
+    return false;
+  }
+
+  lox_object_bound_method *bound = lox_object_bound_method_new(
+      peekv(0), (lox_object_closure *)method.as.object);
+  // Pop the instance off the top of the stack and replace it with the bound
+  // method
+  vm.stack.values[vm.stack.size - 1] =
+      lox_value_from_object((lox_object *)bound);
+
+  return true;
 }
 
 static void print_settings() {

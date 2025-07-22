@@ -125,3 +125,19 @@ inline bool lox_value_is_function(lox_value value) {
 inline bool lox_value_is_native(lox_value value) {
   return lox_value_is_object(value) && value.as.object->type == OBJ_NATIVE;
 }
+
+inline bool lox_value_is_closure(lox_value value) {
+  return lox_value_is_object(value) && value.as.object->type == OBJ_CLOSURE;
+}
+
+inline bool lox_value_is_upvalue(lox_value value) {
+  return lox_value_is_object(value) && value.as.object->type == OBJ_UPVALUE;
+}
+
+inline bool lox_value_is_class(lox_value value) {
+  return lox_value_is_object(value) && value.as.object->type == OBJ_CLASS;
+}
+
+inline bool lox_value_is_instance(lox_value value) {
+  return lox_value_is_object(value) && value.as.object->type == OBJ_INSTANCE;
+}

@@ -72,7 +72,7 @@ static void run_file(const char *path) {
 static void parse_opts(int argc, char *const *argv) {}
 
 static void apply_default_settings() {
-  lox_settings.array_minimum_capacity = 256;
+  lox_settings.array_minimum_capacity = 8;
   lox_settings.array_scale_factor = 2;
   lox_settings.gc_heap_grow_factor = 2;
   lox_settings.hash_table_load_factor = 0.75;

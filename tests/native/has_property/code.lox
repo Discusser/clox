@@ -1,0 +1,7 @@
+class Toast {}
+
+var toast = Toast();
+print hasProperty(toast, "jam");
+toast.jam = "yes!";
+print hasProperty(toast, "jam");
+print toast.jam;

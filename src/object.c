@@ -31,6 +31,15 @@ void lox_print_object(lox_object *obj) {
   case OBJ_UPVALUE:
     lox_print_value(*((lox_object_upvalue *)obj)->location);
     break;
+  case OBJ_CLASS:
+    lox_object_class_print((lox_object_class *)obj);
+    break;
+  case OBJ_INSTANCE:
+    lox_object_instance_print((lox_object_instance *)obj);
+    break;
+  case OBJ_BOUND_METHOD:
+    lox_object_bound_method_print((lox_object_bound_method *)obj);
+    break;
   }
 }
 
@@ -71,6 +80,15 @@ void lox_object_free(lox_object *obj) {
     break;
   case OBJ_UPVALUE:
     lox_object_upvalue_free((lox_object_upvalue *)obj);
+    break;
+  case OBJ_CLASS:
+    lox_object_class_free((lox_object_class *)obj);
+    break;
+  case OBJ_INSTANCE:
+    lox_object_instance_free((lox_object_instance *)obj);
+    break;
+  case OBJ_BOUND_METHOD:
+    lox_object_bound_method_free((lox_object_bound_method *)obj);
     break;
   }
 }
@@ -228,4 +246,61 @@ lox_object_upvalue *lox_object_upvalue_new(lox_value *slot) {
 
 void lox_object_upvalue_free(lox_object_upvalue *obj) {
   FREE(lox_object_upvalue, obj);
+}
+
+lox_object_class *lox_object_class_new(lox_object_string *name) {
+  lox_object_class *obj = OBJ_NEW(lox_object_class, OBJ_CLASS);
+  obj->name = name;
+  obj->methods = ALLOC_TYPE(lox_hash_table);
+  lox_hash_table_init(obj->methods);
+  return obj;
+}
+
+void lox_object_class_print(lox_object_class *obj) {
+  printf("<class ");
+  lox_print_object((lox_object *)obj->name);
+  printf(">");
+}
+
+void lox_object_class_free(lox_object_class *obj) {
+  lox_hash_table_free(obj->methods);
+  FREE(lox_hash_table, obj->methods);
+  FREE(lox_object_class, obj);
+}
+
+lox_object_instance *lox_object_instance_new(lox_object_class *clazz) {
+  lox_object_instance *obj = OBJ_NEW(lox_object_instance, OBJ_INSTANCE);
+  obj->clazz = clazz;
+  obj->fields = ALLOC_TYPE(lox_hash_table);
+  lox_hash_table_init(obj->fields);
+  return obj;
+}
+
+void lox_object_instance_print(lox_object_instance *obj) {
+  printf("<instance ");
+  lox_print_object((lox_object *)obj->clazz->name);
+  printf(">");
+}
+
+void lox_object_instance_free(lox_object_instance *obj) {
+  lox_hash_table_free(obj->fields);
+  FREE(lox_hash_table, obj->fields);
+  FREE(lox_object_instance, obj);
+}
+
+lox_object_bound_method *
+lox_object_bound_method_new(lox_value receiver, lox_object_closure *method) {
+  lox_object_bound_method *obj =
+      OBJ_NEW(lox_object_bound_method, OBJ_BOUND_METHOD);
+  obj->receiver = receiver;
+  obj->method = method;
+  return obj;
+}
+
+void lox_object_bound_method_print(lox_object_bound_method *obj) {
+  lox_print_object((lox_object *)obj->method);
+}
+
+void lox_object_bound_method_free(lox_object_bound_method *obj) {
+  FREE(lox_object_bound_method, obj);
 }

@@ -1,0 +1,3 @@
+Runtime Error: Function 'init' expected 2 arguments, found 1 instead.
+Stacktrace:
+  line 8 in script

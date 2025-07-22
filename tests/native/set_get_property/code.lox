@@ -1,0 +1,27 @@
+class Toast {}
+
+var myinst = Toast();
+var prefix = "data-field";
+for (var i = 0; i < 4; i = i + 1) {
+  var name = prefix;
+  switch (i) {
+    case 0:
+      name = name + "0";
+      break;
+    case 1:
+      name = name + "1";
+      break;
+    case 2:
+      name = name + "2";
+      break;
+    case 3:
+      name = name + "3";
+      break;
+  }
+  setProperty(myinst, name, i * i);
+}
+
+print getProperty(myinst, "data-field0");
+print getProperty(myinst, "data-field1");
+print getProperty(myinst, "data-field2");
+print getProperty(myinst, "data-field3");

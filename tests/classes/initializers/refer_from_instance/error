@@ -1,0 +1,3 @@
+Runtime Error: Cannot refer to initializer from an instance of 'MyClass'.
+Stacktrace:
+  line 8 in script

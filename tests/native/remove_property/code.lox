@@ -1,0 +1,12 @@
+class Toast {}
+
+var toast = Toast();
+
+print getProperty(toast, "test");
+print removeProperty(toast, "test");
+print hasProperty(toast, "test");
+toast.test = "my value";
+print getProperty(toast, "test");
+print hasProperty(toast, "test");
+print removeProperty(toast, "test");
+print hasProperty(toast, "test");

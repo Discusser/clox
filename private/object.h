@@ -1,6 +1,7 @@
 #pragma once
 
 #include "chunk.h"
+#include "table.h"
 #include "value.h"
 #include <stdbool.h>
 #include <stddef.h>
@@ -11,7 +12,10 @@ typedef enum : uint8_t {
   OBJ_FUNCTION,
   OBJ_NATIVE,
   OBJ_CLOSURE,
-  OBJ_UPVALUE
+  OBJ_UPVALUE,
+  OBJ_CLASS,
+  OBJ_INSTANCE,
+  OBJ_BOUND_METHOD,
 } lox_object_type;
 
 // Forward reference lox_object so we can have it contain a pointer to another
@@ -21,6 +25,7 @@ typedef struct lox_chunk lox_chunk;
 typedef struct lox_value lox_value;
 typedef struct lox_object_upvalue lox_object_upvalue;
 typedef struct lox_value lox_value;
+typedef struct lox_hash_table lox_hash_table;
 
 // Base object struct. Every object in lox, that is every value that isn't a
 // literal (number, boolean, nil), is represented by a child of lox_object.
@@ -31,7 +36,7 @@ typedef struct lox_object {
 } lox_object;
 
 // String object used to represent lox strings.
-typedef struct {
+typedef struct lox_object_string {
   lox_object object;
   char *chars;
   int length;
@@ -44,7 +49,7 @@ typedef struct {
 } lox_object_string;
 
 // Function object used to represent lox functions
-typedef struct {
+typedef struct lox_object_function {
   lox_object object;
   lox_chunk chunk;
   lox_object_string *name;
@@ -52,7 +57,7 @@ typedef struct {
   int arity;
 } lox_object_function;
 
-typedef struct {
+typedef struct lox_object_closure {
   lox_object object;
   lox_object_function *function;
   lox_object_upvalue **upvalues;
@@ -68,12 +73,30 @@ typedef struct lox_object_upvalue {
 
 // Native function object
 typedef lox_value (*lox_native_function)(int arg_count, lox_value *args);
-typedef struct {
+typedef struct lox_object_native {
   lox_object object;
   const char *name;
   lox_native_function function;
   int arity;
 } lox_object_native;
+
+typedef struct lox_object_class {
+  lox_object object;
+  lox_object_string *name;
+  lox_hash_table *methods;
+} lox_object_class;
+
+typedef struct lox_object_instance {
+  lox_object object;
+  lox_object_class *clazz;
+  lox_hash_table *fields;
+} lox_object_instance;
+
+typedef struct lox_object_bound_method {
+  lox_object object;
+  lox_value receiver;
+  lox_object_closure *method;
+} lox_object_bound_method;
 
 // Helper function for printing a lox_object to standard output.
 void lox_print_object(lox_object *obj);
@@ -133,3 +156,16 @@ void lox_object_closure_free(lox_object_closure *obj);
 
 lox_object_upvalue *lox_object_upvalue_new(lox_value *slot);
 void lox_object_upvalue_free(lox_object_upvalue *obj);
+
+lox_object_class *lox_object_class_new(lox_object_string *name);
+void lox_object_class_print(lox_object_class *obj);
+void lox_object_class_free(lox_object_class *obj);
+
+lox_object_instance *lox_object_instance_new(lox_object_class *clazz);
+void lox_object_instance_print(lox_object_instance *obj);
+void lox_object_instance_free(lox_object_instance *obj);
+
+lox_object_bound_method *
+lox_object_bound_method_new(lox_value receiver, lox_object_closure *method);
+void lox_object_bound_method_print(lox_object_bound_method *obj);
+void lox_object_bound_method_free(lox_object_bound_method *obj);
