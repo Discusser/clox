@@ -1,0 +1,20 @@
+class A {
+  method() { return "from A"; }
+}
+
+class B < A {
+  method() { return "from B"; }
+  smethod() { return super.method(); }
+}
+
+class C < B {
+  method() { return "from C"; }
+  smethod() { return super.method(); }
+  ssmethod() { return super.smethod(); }
+}
+
+var c = C();
+
+print c.method();
+print c.smethod();
+print c.ssmethod();

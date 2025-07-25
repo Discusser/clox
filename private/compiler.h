@@ -54,6 +54,7 @@ typedef struct lox_compiler {
 
 typedef struct lox_class_compiler {
   lox_class_compiler *enclosing;
+  bool hasSuperclass;
 } lox_class_compiler;
 
 // Compiles code from a string, and writes the bytecode to chunk.

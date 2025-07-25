@@ -26,7 +26,7 @@ lox_value hasProperty_native(int argc, lox_value *argv) {
 lox_value getProperty_native(int argc, lox_value *argv) {
   if (argc != 2 || !lox_value_is_instance(argv[0]) ||
       !lox_value_is_string(argv[1]))
-    return lox_value_from_bool(false);
+    return lox_value_from_nil();
 
   lox_object_instance *inst = (lox_object_instance *)argv[0].as.object;
   lox_value name = argv[1];
@@ -40,7 +40,7 @@ lox_value getProperty_native(int argc, lox_value *argv) {
 lox_value setProperty_native(int argc, lox_value *argv) {
   if (argc != 3 || !lox_value_is_instance(argv[0]) ||
       !lox_value_is_string(argv[1]))
-    return lox_value_from_bool(false);
+    return lox_value_from_nil();
 
   lox_object_instance *inst = (lox_object_instance *)argv[0].as.object;
   lox_value name = argv[1];

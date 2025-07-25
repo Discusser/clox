@@ -17,6 +17,7 @@ static int jump_instruction(const char *name, lox_chunk *chunk, int sign,
                             int offset);
 static int byte_instruction(const char *name, lox_chunk *chunk, int offset);
 static int short_instruction(const char *name, lox_chunk *chunk, int offset);
+static int invoke_instruction(const char *name, lox_chunk *chunk, int offset);
 
 extern lox_vm vm;
 extern lox_compiler *compiler;
@@ -138,15 +139,14 @@ int lox_disassemble_instruction(lox_chunk *chunk, int offset) {
     return byte_instruction("OP_GET_PROPERTY", chunk, offset);
   case OP_METHOD:
     return constant_instruction("OP_METHOD", chunk, offset);
-  case OP_INVOKE: {
-    uint8_t constant = chunk->code.values[offset + 1];
-    uint8_t argc = chunk->code.values[offset + 2];
-    printf("%-16s argc   %5d index  %d  value '", "OP_INVOKE", argc, constant);
-    lox_print_value(chunk->constants.values[constant]);
-    printf("'\n");
-    return offset + 3;
-  }
-
+  case OP_INVOKE:
+    return invoke_instruction("OP_INVOKE", chunk, offset);
+  case OP_INHERIT:
+    return simple_instruction("OP_INHERIT", offset);
+  case OP_GET_SUPER:
+    return constant_instruction("OP_GET_SUPER", chunk, offset);
+  case OP_SUPER_INVOKE:
+    return invoke_instruction("OP_SUPER_INVOKE", chunk, offset);
   default:
     printf("Unknown opcode %d\n", instruction);
     return offset + 1;
@@ -222,6 +222,15 @@ static int short_instruction(const char *name, lox_chunk *chunk, int offset) {
   uint16_t sh =
       chunk->code.values[offset + 1] << 8 | chunk->code.values[offset + 2];
   printf("%-16s param  %5d\n", name, sh);
+  return offset + 3;
+}
+
+static int invoke_instruction(const char *name, lox_chunk *chunk, int offset) {
+  uint8_t constant = chunk->code.values[offset + 1];
+  uint8_t argc = chunk->code.values[offset + 2];
+  printf("%-16s argc   %5d index  %d  value '", name, argc, constant);
+  lox_print_value(chunk->constants.values[constant]);
+  printf("'\n");
   return offset + 3;
 }
 

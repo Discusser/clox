@@ -1,0 +1,3 @@
+Runtime Error: Cannot inherit from object that is not a class.
+Stacktrace:
+  line 2 in script

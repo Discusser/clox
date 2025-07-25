@@ -5,4 +5,5 @@ class MyClass {
   }
 }
 
-print MyClass(2, 3).init;
+var a = MyClass(2, 3).init;
+print a;

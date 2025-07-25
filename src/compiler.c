@@ -77,6 +77,7 @@ static int add_upvalue(lox_compiler *compiler, uint16_t index, bool is_local);
 static bool are_identifiers_equal(lox_token *a, lox_token *b);
 static int resolve_local(lox_compiler *compiler, lox_token *name);
 static int resolve_upvalue(lox_compiler *compiler, lox_token *name);
+static lox_token synthetic_token(const char *text);
 
 static void begin_scope();
 static void end_scope();
@@ -121,6 +122,7 @@ static void compile_or(bool can_assign);
 static void call(bool can_assign);
 static void dot(bool can_assign);
 static void compile_this(bool can_assign);
+static void compile_super(bool can_assign);
 static uint8_t argument_list();
 
 extern lox_vm vm;
@@ -167,7 +169,7 @@ lox_parse_rule rules[] = {
     [TOKEN_OR] = {NULL, compile_or, PREC_OR},
     [TOKEN_PRINT] = {NULL, NULL, PREC_NONE},
     [TOKEN_RETURN] = {NULL, NULL, PREC_NONE},
-    [TOKEN_SUPER] = {NULL, NULL, PREC_NONE},
+    [TOKEN_SUPER] = {compile_super, NULL, PREC_NONE},
     [TOKEN_THIS] = {compile_this, NULL, PREC_NONE},
     [TOKEN_TRUE] = {literal, NULL, PREC_NONE},
     [TOKEN_VAR] = {NULL, NULL, PREC_NONE},
@@ -220,14 +222,15 @@ void init_compiler(lox_compiler *curr, lox_function_type function_type) {
   compiler->function = lox_object_function_new();
 
   lox_token local_token;
-  local_token.line = -1;
-  local_token.type = TOKEN_IDENTIFIER;
+  local_token.line = parser.previous.line;
   if (function_type == TYPE_METHOD || function_type == TYPE_INITIALIZER) {
     local_token.start = "this";
     local_token.length = 4;
+    local_token.type = TOKEN_THIS;
   } else {
     local_token.start = "";
     local_token.length = 0;
+    local_token.type = TOKEN_IDENTIFIER;
   }
   add_local(local_token, false);
   lox_local *local = &compiler->locals.values[compiler->locals.size - 1];
@@ -622,6 +625,14 @@ static int resolve_upvalue(lox_compiler *compiler, lox_token *name) {
   return -1;
 }
 
+static lox_token synthetic_token(const char *text) {
+  lox_token token;
+  token.start = text;
+  token.length = strlen(text);
+  token.line = parser.previous.length;
+  return token;
+}
+
 static void begin_scope() { compiler->scope_depth++; }
 
 static void end_scope() {
@@ -754,10 +765,10 @@ static void function_declaration() {
 
 static void class_declaration() {
   consume_expected(TOKEN_IDENTIFIER, "Expected class name.");
-  lox_token *name_token = &parser.previous;
+  lox_token name_token = parser.previous;
   uint16_t index = identifier_constant(&parser.previous, NULL);
   lox_object_string *name =
-      lox_object_string_new_copy(name_token->start, name_token->length);
+      lox_object_string_new_copy(name_token.start, name_token.length);
 
   // TODO: Add OP_CLASS_LONG to allow for more than 255 classes.
   emit_byte(OP_CLASS);
@@ -767,17 +778,41 @@ static void class_declaration() {
   define_variable(index);
 
   lox_class_compiler current;
+  current.hasSuperclass = false;
   current.enclosing = class_compiler;
   class_compiler = &current;
 
-  named_variable(*name_token, false);
+  if (match(TOKEN_LESS)) {
+    consume_expected(TOKEN_IDENTIFIER, "Expected superclass name.");
+    if (are_identifiers_equal(&name_token, &parser.previous)) {
+      error("Class cannot inherit from itself.");
+    }
+    variable(false);
+
+    begin_scope();
+    lox_token token = synthetic_token("super");
+    token.type = TOKEN_SUPER;
+    add_local(token, false);
+    define_variable(0);
+
+    named_variable(name_token, false);
+    emit_byte(OP_INHERIT);
+
+    class_compiler->hasSuperclass = true;
+  }
+
+  named_variable(name_token, false);
 
   consume_expected(TOKEN_LEFT_BRACE, "Expected '{' after class name.");
   while (!check(TOKEN_RIGHT_BRACE) && !check(TOKEN_EOF)) {
     method();
   }
   consume_expected(TOKEN_RIGHT_BRACE, "Expected '}' after class body.");
+
   emit_byte(OP_POP);
+  if (class_compiler->hasSuperclass) {
+    end_scope();
+  }
 
   class_compiler = current.enclosing;
 }
@@ -1318,6 +1353,38 @@ static void compile_this(bool can_assign) {
     return;
   }
   variable(false);
+}
+
+static void compile_super(bool can_assign) {
+  if (class_compiler == NULL) {
+    error("Cannot use 'super' outside of a class.");
+    return;
+  }
+  if (class_compiler->hasSuperclass == false) {
+    error("Cannot use 'super' in a class with no superclass.");
+    return;
+  }
+  consume_expected(TOKEN_DOT, "Expected '.' after 'super'.");
+  consume_expected(TOKEN_IDENTIFIER, "Expected superclass method name.");
+  lox_token *name_token = &parser.previous;
+  int index = identifier_constant(&parser.previous, NULL);
+  lox_object_string *name =
+      lox_object_string_new_copy(name_token->start, name_token->length);
+  int constant = lox_chunk_add_constant(
+      current_chunk(), lox_value_from_object((lox_object *)name));
+
+  named_variable(synthetic_token("this"), false);
+  if (match(TOKEN_LEFT_PAREN)) {
+    uint8_t argc = argument_list();
+    named_variable(synthetic_token("super"), false);
+    emit_byte(OP_SUPER_INVOKE);
+    emit_byte(constant);
+    emit_byte(argc);
+  } else {
+    named_variable(synthetic_token("super"), false);
+    emit_byte(OP_GET_SUPER);
+    emit_byte(constant);
+  }
 }
 
 static uint8_t argument_list() {

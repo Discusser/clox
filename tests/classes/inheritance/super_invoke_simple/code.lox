@@ -1,0 +1,19 @@
+class A {
+  method() { return "A"; }
+}
+
+class B < A {
+  method() { return "B"; }
+}
+
+class C < B {
+  method() { return super.method(); }
+}
+
+var c = C();
+var b = B();
+var a = A();
+
+print c.method();
+print b.method();
+print a.method();

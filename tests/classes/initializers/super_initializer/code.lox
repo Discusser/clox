@@ -1,0 +1,22 @@
+class A {
+  init(a, b) {
+    print "A init";
+    this.isASet = true;
+    this.a = a;
+    this.b = b;
+  }
+}
+
+class B < A {
+  init(a) {
+    super.init(a, 5);
+    print "B init";
+    this.isBSet = true;
+  }
+}
+
+var b = B(1);
+print b.isASet;
+print b.isBSet;
+print b.a;
+print b.b;

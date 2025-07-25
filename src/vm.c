@@ -576,9 +576,6 @@ interpret_result run() {
 
       lox_object_instance *instance = (lox_object_instance *)top.as.object;
       lox_value name = READ_CONST();
-      if (name.as.object->type != OBJ_STRING) {
-        runtime_error("Expected string for property name.");
-      }
       lox_value val = peekv(0);
       lox_hash_table_put(instance->fields, name, val);
       // Pop the value, then the instance, and then push the value
@@ -617,6 +614,45 @@ interpret_result run() {
       uint8_t argc = READ_BYTE();
       frame->ip = ip;
       if (!invoke(name, argc)) {
+        return INTERPRET_RUNTIME_ERROR;
+      }
+      frame = &vm.frames[vm.frame_count - 1];
+      ip = frame->ip;
+      break;
+    }
+    case OP_INHERIT: {
+      lox_value super = peekv(1);
+      if (!lox_value_is_class(super)) {
+        RUNTIME_ERROR("Cannot inherit from object that is not a class.");
+        return INTERPRET_RUNTIME_ERROR;
+      }
+      lox_object_class *superclass = (lox_object_class *)super.as.object;
+      lox_object_class *child = (lox_object_class *)peekv(0).as.object;
+      lox_hash_table_copy_to(superclass->methods, child->methods);
+      vm.stack.size--;
+      break;
+    }
+    case OP_GET_SUPER: {
+      lox_object_instance *inst_this =
+          (lox_object_instance *)peekv(1).as.object;
+      lox_object_class *class_super = (lox_object_class *)peekv(0).as.object;
+      lox_value name = READ_CONST();
+      lox_value val;
+
+      if (!bind_method(class_super, name)) {
+        return INTERPRET_RUNTIME_ERROR;
+      }
+
+      break;
+    }
+    case OP_SUPER_INVOKE: {
+      lox_value name = READ_CONST();
+      uint8_t argc = READ_BYTE();
+      lox_object_class *class_super =
+          (lox_object_class *)vm.stack.values[--vm.stack.size].as.object;
+
+      frame->ip = ip;
+      if (!invoke_from_class(class_super, name, argc)) {
         return INTERPRET_RUNTIME_ERROR;
       }
       frame = &vm.frames[vm.frame_count - 1];
@@ -708,16 +744,6 @@ static bool invoke(lox_value name, int argc) {
     call_value(value, argc);
   }
 
-  if (lox_values_equal(name, vm.init_string)) {
-    // Calling a constructor on an instance of a class is just weird, since
-    // the constructor is supposed to initialize the class, and thus
-    // shouldn't be called multiple times for the same object.
-    char *class_name = inst->clazz->name->chars;
-    runtime_error("Cannot call initializer on an instance of '%s'.",
-                  class_name);
-    return false;
-  }
-
   return invoke_from_class(inst->clazz, name, argc);
 }
 
@@ -735,16 +761,6 @@ static bool invoke_from_class(lox_object_class *clazz, lox_value name,
 }
 
 static bool bind_method(lox_object_class *clazz, lox_value name) {
-  if (name.as.object->type != OBJ_STRING) {
-    runtime_error("Expected string for property name.");
-  }
-
-  if (lox_values_equal(name, vm.init_string)) {
-    runtime_error("Cannot refer to initializer from an instance of '%s'.",
-                  clazz->name->chars);
-    return false;
-  }
-
   lox_value method;
   if (!lox_hash_table_get(clazz->methods, name, &method)) {
     // This function expects an instance to be sitting on top of the stack, so

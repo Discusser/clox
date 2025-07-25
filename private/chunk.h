@@ -144,6 +144,9 @@ typedef enum {
   OP_GET_PROPERTY,
   OP_METHOD,
   OP_INVOKE,
+  OP_INHERIT,
+  OP_GET_SUPER,
+  OP_SUPER_INVOKE,
   // Pops the value on top of the stack, pops the current frame, and pushes the
   // initial popped value (the return value) onto the stack. This pops the
   // current frame and goes to the previous frame. Parameters: none
